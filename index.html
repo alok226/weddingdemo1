@@ -1,0 +1,3214 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  Music,
+  Volume2,
+  VolumeX,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  MapPin,
+  Share2,
+  Sparkles,
+  Heart,
+  X,
+  Upload,
+  Settings,
+  Check,
+  RotateCcw,
+  Maximize2,
+  Download,
+  Play,
+  Pause,
+  Info,
+  Image as ImageIcon,
+  Lock,
+  Unlock,
+  Link as LinkIcon,
+  Copy,
+  Save,
+  FileCode
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithCustomToken,
+  onAuthStateChanged
+} from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+
+// ============================================================================
+// 0. CLOUD DATABASE INITIALIZATION (Auto-syncs Admin Studio Changes for All Guests)
+// ============================================================================
+let db = null;
+let auth = null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'royal-wedding-template-01';
+
+try {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    const firebaseConfig = JSON.parse(__firebase_config);
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (e) {
+  // Fallback to URL config / in-memory if environment config is unavailable
+}
+
+// Default Admin Studio Password (Changeable or used to unlock the editor)
+const ADMIN_STUDIO_PASSWORD = 'admin123';
+
+// ============================================================================
+// 1. STRUCTURED DEFAULT WEDDING CONFIGURATION (SaaS Ready Schema)
+// ============================================================================
+const INITIAL_WEDDING_CONFIG = {
+  templateId: 'royal-jaipur-01',
+  isDemo: true,
+  couple: {
+    brideName: 'Ananya Sharma',
+    brideShort: 'Ananya',
+    groomName: 'Aarav Rajput',
+    groomShort: 'Aarav',
+    tagline: 'Two Hearts. One Beautiful Beginning.',
+    invitationMessage:
+      'Together with our families, we invite you to celebrate the beginning of our forever.',
+    storyMessage:
+      'Beneath the starlit arches of Rajasthan, two souls bound by timeless tradition, laughter, and friendship step into a sacred promise of forever.',
+    closingMessage:
+      'We cannot wait to celebrate this beautiful beginning with you.'
+  },
+  weddingDateISO: '2027-02-15T19:00:00+05:30',
+  weddingDateDisplay: '15 February 2027',
+  venue: {
+    name: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+    shortCity: 'Jaipur, Rajasthan',
+    mapsQuery: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+    mapsUrl: '' // Optional direct Google Maps URL override
+  },
+  assets: {
+    bridePng: '', // Direct Public URL or empty for Royal Bride SVG illustration
+    groomPng: '', // Direct Public URL or empty for Royal Groom SVG illustration
+    couplePortrait:
+      'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=1000&q=85',
+    musicUrl: '', // Direct Public MP3 URL
+    suggestedPaths: {
+      bride: 'public/assets/bride-ananya.png',
+      groom: 'public/assets/groom-aarav.png',
+      couple: 'public/assets/couple-portrait.webp',
+      floralCorner: 'public/assets/floral-corner.png',
+      royalArch: 'public/assets/royal-arch.png',
+      music: 'public/assets/wedding-music.mp3'
+    }
+  },
+  gallery: [
+    {
+      id: 'mem-1',
+      title: 'Couple Portrait',
+      caption: 'Royal courtyard portraits at dusk in Jaipur',
+      aspect: 'tall',
+      url: 'https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=900&q=80'
+    },
+    {
+      id: 'mem-2',
+      title: 'Traditional Indian Outfits',
+      caption: 'Handcrafted Zardozi heirloom ensembles & heritage jewels',
+      aspect: 'square',
+      url: 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=900&q=80'
+    },
+    {
+      id: 'mem-3',
+      title: 'Outdoor Romantic Portrait',
+      caption: 'Golden hour strolls along the palace sandstone colonnade',
+      aspect: 'square',
+      url: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=900&q=80'
+    },
+    {
+      id: 'mem-4',
+      title: 'Candid Laughter',
+      caption: 'Unscripted joy amidst marigolds and rose petals',
+      aspect: 'wide',
+      url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=900&q=80'
+    },
+    {
+      id: 'mem-5',
+      title: 'Engagement Moment',
+      caption: 'The sacred exchange of rings & blessings from elders',
+      aspect: 'square',
+      url: 'https://images.unsplash.com/photo-1545232972-907699a2f158?auto=format&fit=crop&w=900&q=80'
+    },
+    {
+      id: 'mem-6',
+      title: 'Close-up Portrait',
+      caption: 'Intricate Mehendi, Kundan bangles & timeless promises',
+      aspect: 'square',
+      url: 'https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?auto=format&fit=crop&w=900&q=80'
+    }
+  ],
+  events: [
+    {
+      id: 'haldi',
+      title: 'Haldi',
+      subtitle: 'Pithi & Marigold Blessings',
+      date: '13 February 2027',
+      time: '11:00 AM',
+      venue: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+      dressCode: 'Shades of Sunshine Yellow & Ivory',
+      description:
+        'A sunlit morning of auspicious turmeric blessings, folk dhol beats, and showered marigold petals to invoke radiance and prosperity.',
+      accentType: 'lotus'
+    },
+    {
+      id: 'mehendi',
+      title: 'Mehendi',
+      subtitle: 'Henna Artistry & Folk Melodies',
+      date: '13 February 2027',
+      time: '5:00 PM',
+      venue: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+      dressCode: 'Emerald Green, Mint & Pastel Brocades',
+      description:
+        'Intricate bridal henna stories painted onto hands while Rajasthani folk musicians fill the afternoon breeze with soulful melodies.',
+      accentType: 'paisley'
+    },
+    {
+      id: 'sangeet',
+      title: 'Sangeet',
+      subtitle: 'A Night of Royal Music & Dance',
+      date: '14 February 2027',
+      time: '7:00 PM',
+      venue: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+      dressCode: 'Regal Indo-Western Glamour & Mirror Work',
+      description:
+        'An enchanting evening under crystal chandeliers featuring spirited family performances, classical kathak fusion, and celebratory toasts.',
+      accentType: 'sitar'
+    },
+    {
+      id: 'wedding',
+      title: 'Wedding Ceremony',
+      subtitle: 'Baraat, Varmala & Sacred Pheras',
+      date: '15 February 2027',
+      time: '7:00 PM',
+      venue: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+      dressCode: 'Traditional Royal Indian Attire (Crimson, Gold & Ivory)',
+      description:
+        'Following the royal Baraat procession, join us beneath the floral mandap as Ananya and Aarav take their seven sacred vows around the holy fire.',
+      accentType: 'kalash'
+    },
+    {
+      id: 'reception',
+      title: 'Reception',
+      subtitle: 'Grand Royal Banquet & Toasts',
+      date: '16 February 2027',
+      time: '7:30 PM',
+      venue: 'The Royal Orchid Palace, Jaipur, Rajasthan',
+      dressCode: 'Black Tie / Formal Bandhgala & Heritage Sarees',
+      description:
+        'A starlit royal banquet welcoming the newlyweds with artisanal Awadhi and Rajasthani cuisine, heartfelt speeches, and orchestral music.',
+      accentType: 'palace'
+    }
+  ],
+  theme: {
+    deepMaroon: '#541522',
+    burgundy: '#741F32',
+    antiqueGold: '#C9A45C',
+    warmIvory: '#FFF6E8',
+    mutedRose: '#D9A8A9',
+    darkText: '#342020'
+  }
+};
+
+// Encode / Decode helper for URL-based instant sharing fallback
+const encodeConfigToUrlParam = (cfg) => {
+  try {
+    return btoa(encodeURIComponent(JSON.stringify(cfg)));
+  } catch (e) {
+    return '';
+  }
+};
+
+const decodeConfigFromUrlParam = (encoded) => {
+  try {
+    return JSON.parse(decodeURIComponent(atob(encoded)));
+  } catch (e) {
+    return null;
+  }
+};
+
+const CARD_TITLES = [
+  { index: 0, code: '01', label: 'Grand Opening' },
+  { index: 1, code: '02', label: 'The Couple' },
+  { index: 2, code: '03', label: 'Our Memories' },
+  { index: 3, code: '04', label: 'Save the Date' },
+  { index: 4, code: '05', label: 'Festivities' },
+  { index: 5, code: '06', label: 'The Venue' }
+];
+
+// ============================================================================
+// 2. ORNAMENTAL SVG ASSETS (Mughal Arch, Jaali, Bride & Groom Illustrations)
+// ============================================================================
+
+const FloralCornerSVG = ({ className = 'w-16 h-16', flipX = false, flipY = false }) => (
+  <svg
+    viewBox="0 0 120 120"
+    fill="none"
+    className={className}
+    style={{
+      transform: `scale(${flipX ? -1 : 1}, ${flipY ? -1 : 1})`
+    }}
+    aria-hidden="true"
+  >
+    <path
+      d="M6 6 L6 85 C6 45 45 6 85 6 Z"
+      stroke="#C9A45C"
+      strokeWidth="1.5"
+      fill="rgba(201,164,92,0.08)"
+    />
+    <path
+      d="M14 14 C38 14 58 24 74 42 C52 34 34 52 42 74 C24 58 14 38 14 14 Z"
+      stroke="#C9A45C"
+      strokeWidth="1.4"
+      fill="rgba(201,164,92,0.16)"
+    />
+    <circle cx="24" cy="24" r="6" fill="#C9A45C" />
+    <circle cx="24" cy="24" r="3" fill="#541522" />
+    <path
+      d="M6 48 Q28 46 42 62 M48 6 Q46 28 62 42"
+      stroke="#C9A45C"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+    />
+    <circle cx="44" cy="64" r="2.5" fill="#C9A45C" />
+    <circle cx="64" cy="44" r="2.5" fill="#C9A45C" />
+    <circle cx="92" cy="8" r="2" fill="#C9A45C" />
+    <circle cx="8" cy="92" r="2" fill="#C9A45C" />
+  </svg>
+);
+
+const RoyalMughalArchSVG = ({ className = '' }) => (
+  <svg
+    viewBox="0 0 500 680"
+    fill="none"
+    preserveAspectRatio="none"
+    className={`pointer-events-none ${className}`}
+    aria-hidden="true"
+  >
+    <defs>
+      <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#E6C987" />
+        <stop offset="50%" stopColor="#C9A45C" />
+        <stop offset="100%" stopColor="#9A7432" />
+      </linearGradient>
+    </defs>
+    {/* Outer Frame */}
+    <rect
+      x="8"
+      y="8"
+      width="484"
+      height="664"
+      rx="16"
+      stroke="url(#goldGrad)"
+      strokeWidth="1.5"
+      strokeOpacity="0.65"
+    />
+    {/* Scalloped Mughal Cusped Arch */}
+    <path
+      d="M 24 656
+         L 24 230
+         C 24 195, 55 180, 68 152
+         C 80 126, 98 118, 122 96
+         C 145 75, 175 68, 202 46
+         C 225 28, 242 22, 250 12
+         C 258 22, 275 28, 298 46
+         C 325 68, 355 75, 378 96
+         C 402 118, 420 126, 432 152
+         C 445 180, 476 195, 476 230
+         L 476 656 Z"
+      stroke="url(#goldGrad)"
+      strokeWidth="2.4"
+      fill="none"
+    />
+    <path
+      d="M 34 646
+         L 34 235
+         C 34 202, 63 188, 76 160
+         C 88 135, 105 127, 128 106
+         C 150 86, 180 78, 206 57
+         C 228 40, 242 33, 250 24
+         C 258 33, 272 40, 294 57
+         C 320 78, 350 86, 372 106
+         C 395 127, 412 135, 424 160
+         C 437 188, 466 202, 466 235
+         L 466 646 Z"
+      stroke="url(#goldGrad)"
+      strokeWidth="1"
+      strokeDasharray="4 4"
+      strokeOpacity="0.75"
+      fill="none"
+    />
+    {/* Spandrel Lotus Medallions */}
+    <circle cx="72" cy="70" r="22" stroke="url(#goldGrad)" strokeWidth="1.2" fill="rgba(201,164,92,0.08)" />
+    <circle cx="72" cy="70" r="12" stroke="url(#goldGrad)" strokeWidth="1" />
+    <circle cx="72" cy="70" r="4" fill="#C9A45C" />
+    <circle cx="428" cy="70" r="22" stroke="url(#goldGrad)" strokeWidth="1.2" fill="rgba(201,164,92,0.08)" />
+    <circle cx="428" cy="70" r="12" stroke="url(#goldGrad)" strokeWidth="1" />
+    <circle cx="428" cy="70" r="4" fill="#C9A45C" />
+  </svg>
+);
+
+const OrnamentalDiyaSVG = ({ className = 'w-10 h-10' }) => (
+  <svg viewBox="0 0 64 64" fill="none" className={className} aria-hidden="true">
+    {/* Glowing Aura */}
+    <circle cx="32" cy="18" r="12" fill="rgba(255, 204, 102, 0.22)" className="animate-pulse" />
+    {/* Flame */}
+    <path
+      d="M32 6 C32 6 24 16 24 22 C24 26.5 27.5 30 32 30 C36.5 30 40 26.5 40 22 C40 16 32 6 32 6 Z"
+      fill="#F59E0B"
+    />
+    <path
+      d="M32 12 C32 12 28 18 28 22 C28 24.5 29.8 27 32 27 C34.2 27 36 24.5 36 22 C36 18 32 12 32 12 Z"
+      fill="#FFF6E8"
+    />
+    {/* Diya Bowl */}
+    <path
+      d="M10 32 Q32 38 54 32 C52 46 42 52 32 52 C22 52 12 46 10 32 Z"
+      fill="#C9A45C"
+      stroke="#FFF6E8"
+      strokeWidth="1.2"
+    />
+    <path d="M16 36 Q32 41 48 36" stroke="#541522" strokeWidth="1.5" strokeLinecap="round" />
+    {/* Base Pedestal */}
+    <path d="M22 52 L42 52 L46 57 L18 57 Z" fill="#9A7432" />
+  </svg>
+);
+
+const HangingJhumarSVG = ({ className = 'w-10 h-28' }) => (
+  <svg viewBox="0 0 60 160" fill="none" className={className} aria-hidden="true">
+    <line x1="30" y1="0" x2="30" y2="55" stroke="#C9A45C" strokeWidth="1.5" />
+    <circle cx="30" cy="24" r="3.5" fill="#C9A45C" />
+    <circle cx="30" cy="42" r="2.5" fill="#FFF6E8" />
+    {/* Jhumka Bell Dome */}
+    <path
+      d="M12 82 C12 65 20 55 30 55 C40 55 48 65 48 82 Z"
+      fill="#741F32"
+      stroke="#C9A45C"
+      strokeWidth="2"
+    />
+    <path d="M15 76 Q30 70 45 76" stroke="#C9A45C" strokeWidth="1.2" />
+    {/* Hanging Pearl Drops */}
+    <line x1="16" y1="82" x2="16" y2="100" stroke="#C9A45C" strokeWidth="1" />
+    <circle cx="16" cy="103" r="2.5" fill="#FFF6E8" />
+    <line x1="23" y1="82" x2="23" y2="108" stroke="#C9A45C" strokeWidth="1" />
+    <circle cx="23" cy="111" r="2.5" fill="#C9A45C" />
+    <line x1="30" y1="82" x2="30" y2="118" stroke="#C9A45C" strokeWidth="1.2" />
+    <circle cx="30" cy="122" r="3.5" fill="#FFF6E8" stroke="#C9A45C" strokeWidth="1" />
+    <line x1="37" y1="82" x2="37" y2="108" stroke="#C9A45C" strokeWidth="1" />
+    <circle cx="37" cy="111" r="2.5" fill="#C9A45C" />
+    <line x1="44" y1="82" x2="44" y2="100" stroke="#C9A45C" strokeWidth="1" />
+    <circle cx="44" cy="103" r="2.5" fill="#FFF6E8" />
+  </svg>
+);
+
+// Detailed Transparent-Background Full-Body Royal Indian Bride Illustration
+const RoyalBrideIllustration = ({ customPng, className = 'h-48 sm:h-56' }) => {
+  if (customPng) {
+    return (
+      <img
+        src={customPng}
+        alt="Bride Ananya Sharma in traditional red bridal lehenga"
+        className={`object-contain select-none drop-shadow-[0_12px_20px_rgba(30,5,10,0.5)] ${className}`}
+      />
+    );
+  }
+
+  return (
+    <svg
+      viewBox="0 0 220 380"
+      fill="none"
+      className={`select-none drop-shadow-[0_12px_20px_rgba(30,5,10,0.45)] ${className}`}
+      role="img"
+      aria-label="Illustrated Indian Bride Ananya Sharma in traditional crimson and antique gold lehenga"
+    >
+      <defs>
+        <linearGradient id="brideLehenga" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#9E1B34" />
+          <stop offset="55%" stopColor="#741F32" />
+          <stop offset="100%" stopColor="#4A0E1C" />
+        </linearGradient>
+        <linearGradient id="brideGold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#F3DC99" />
+          <stop offset="50%" stopColor="#C9A45C" />
+          <stop offset="100%" stopColor="#8F6B29" />
+        </linearGradient>
+      </defs>
+
+      {/* Sheer Crimson & Gold Dupatta Veil */}
+      <path
+        d="M110 24 C68 26 48 85 40 165 C34 225 25 290 28 345 L192 345 C195 290 186 225 180 165 C172 85 152 26 110 24 Z"
+        fill="rgba(158, 27, 52, 0.28)"
+        stroke="url(#brideGold)"
+        strokeWidth="2"
+        strokeDasharray="5 2"
+      />
+
+      {/* Hair & Bridal Bun */}
+      <circle cx="110" cy="54" r="24" fill="#1F1214" />
+      <circle cx="110" cy="34" r="14" fill="#1F1214" stroke="#C9A45C" strokeWidth="1.5" />
+      {/* Jasmine Gajra around Bun */}
+      <path
+        d="M94 38 Q110 28 126 38"
+        stroke="#FFF6E8"
+        strokeWidth="4"
+        strokeLinecap="round"
+        strokeDasharray="2 5"
+      />
+
+      {/* Face & Neck */}
+      <rect x="103" y="75" width="14" height="18" rx="6" fill="#E5B592" />
+      <path
+        d="M90 54 C90 40 130 40 130 54 C130 72 120 82 110 82 C100 82 90 72 90 54 Z"
+        fill="#EBBFA0"
+      />
+
+      {/* Matha Patti & Maang Tikka */}
+      <path d="M90 48 Q110 55 130 48" stroke="url(#brideGold)" strokeWidth="2.5" />
+      <line x1="110" y1="34" x2="110" y2="51" stroke="url(#brideGold)" strokeWidth="2" />
+      <circle cx="110" cy="53" r="3.5" fill="#C9A45C" stroke="#FFF6E8" strokeWidth="0.8" />
+      <circle cx="110" cy="59" r="1.8" fill="#741F32" />
+
+      {/* Graceful Closed Eyes, Lashes & Smile */}
+      <path d="M97 61 Q102 64 106 61" stroke="#2D1618" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M114 61 Q118 64 123 61" stroke="#2D1618" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M96 57 Q102 54 106 57" stroke="#2D1618" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M114 57 Q118 54 124 57" stroke="#2D1618" strokeWidth="1.2" strokeLinecap="round" />
+      {/* Bridal Nath (Nose Ring) */}
+      <circle cx="104" cy="67" r="4.5" stroke="url(#brideGold)" strokeWidth="1.2" fill="none" />
+      <path d="M99 68 Q93 66 90 61" stroke="url(#brideGold)" strokeWidth="0.9" />
+      {/* Lips */}
+      <path d="M106 73 Q110 76 114 73" stroke="#9E1B34" strokeWidth="2" strokeLinecap="round" />
+
+      {/* Jhumka Earrings */}
+      <circle cx="88" cy="65" r="3" fill="url(#brideGold)" />
+      <path d="M84 68 L92 68 L90 75 L86 75 Z" fill="url(#brideGold)" />
+      <circle cx="132" cy="65" r="3" fill="url(#brideGold)" />
+      <path d="M128 68 L136 68 L134 75 L130 75 Z" fill="url(#brideGold)" />
+
+      {/* Royal Kundan Choker & Rani Haar Necklace */}
+      <path
+        d="M96 86 Q110 94 124 86"
+        stroke="url(#brideGold)"
+        strokeWidth="5"
+        strokeLinecap="round"
+      />
+      <path
+        d="M92 92 Q110 112 128 92"
+        stroke="url(#brideGold)"
+        strokeWidth="2.5"
+        strokeDasharray="3 2"
+      />
+      <circle cx="110" cy="105" r="3.5" fill="#FFF6E8" stroke="#C9A45C" strokeWidth="1.2" />
+
+      {/* Bridal Choli (Blouse) */}
+      <path
+        d="M82 95 L138 95 L144 142 L76 142 Z"
+        fill="url(#brideLehenga)"
+        stroke="url(#brideGold)"
+        strokeWidth="1.8"
+      />
+      {/* Gold Zardozi Choli Embroidery */}
+      <path d="M90 100 Q110 120 130 100" stroke="url(#brideGold)" strokeWidth="1.4" />
+      <line x1="110" y1="108" x2="110" y2="140" stroke="url(#brideGold)" strokeWidth="1.5" />
+
+      {/* Arms in Graceful Namaste / Folded Pose */}
+      <path
+        d="M82 98 C66 115 68 142 96 150"
+        stroke="#E5B592"
+        strokeWidth="11"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M138 98 C154 115 152 142 124 150"
+        stroke="#E5B592"
+        strokeWidth="11"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Choli Sleeves */}
+      <path d="M82 96 C72 108 71 120 76 125 L88 118 Z" fill="#8B182E" stroke="url(#brideGold)" strokeWidth="1.5" />
+      <path d="M138 96 C148 108 149 120 144 125 L132 118 Z" fill="#8B182E" stroke="url(#brideGold)" strokeWidth="1.5" />
+
+      {/* Red & Gold Chooda Bangles */}
+      <path d="M82 142 L95 148" stroke="#9E1B34" strokeWidth="7" strokeLinecap="round" />
+      <path d="M84 143 L93 147" stroke="url(#brideGold)" strokeWidth="2" strokeDasharray="2 2" />
+      <path d="M138 142 L125 148" stroke="#9E1B34" strokeWidth="7" strokeLinecap="round" />
+      <path d="M136 143 L127 147" stroke="url(#brideGold)" strokeWidth="2" strokeDasharray="2 2" />
+      {/* Kalire Hanging from Wrists */}
+      <path d="M88 153 L83 168 L93 168 Z" fill="url(#brideGold)" />
+      <path d="M132 153 L127 168 L137 168 Z" fill="url(#brideGold)" />
+
+      {/*Hands */}
+      <circle cx="105" cy="150" r="6" fill="#E5B592" />
+      <circle cx="115" cy="150" r="6" fill="#E5B592" />
+      {/* Mehendi tint on hands */}
+      <circle cx="110" cy="150" r="5" fill="#741F32" fillOpacity="0.45" />
+
+      {/* Flared Royal Bridal Lehenga Skirt */}
+      <path
+        d="M84 158 L136 158 C158 215 182 285 194 358 L26 358 C38 285 62 215 84 158 Z"
+        fill="url(#brideLehenga)"
+        stroke="url(#brideGold)"
+        strokeWidth="2.5"
+      />
+
+      {/* Kamarbandh (Waist Chain) */}
+      <path d="M83 160 Q110 168 137 160" stroke="url(#brideGold)" strokeWidth="4" />
+
+      {/* Lehenga Kali Panels & Intricate Antique-Gold Embroidery */}
+      <line x1="94" y1="162" x2="58" y2="356" stroke="url(#brideGold)" strokeWidth="1.2" strokeOpacity="0.7" />
+      <line x1="104" y1="164" x2="92" y2="356" stroke="url(#brideGold)" strokeWidth="1.2" strokeOpacity="0.7" />
+      <line x1="116" y1="164" x2="128" y2="356" stroke="url(#brideGold)" strokeWidth="1.2" strokeOpacity="0.7" />
+      <line x1="126" y1="162" x2="162" y2="356" stroke="url(#brideGold)" strokeWidth="1.2" strokeOpacity="0.7" />
+
+      {/* Heavy Zardozi Hem Border */}
+      <path
+        d="M32 325 Q110 336 188 325 L193 356 L27 356 Z"
+        fill="rgba(201, 164, 92, 0.25)"
+        stroke="url(#brideGold)"
+        strokeWidth="2"
+      />
+      {/* Motif Arches along Lehenga Border */}
+      <path
+        d="M36 354 Q48 330 60 354 Q72 330 84 354 Q96 330 108 354 Q120 330 132 354 Q144 330 156 354 Q168 330 184 354"
+        stroke="url(#brideGold)"
+        strokeWidth="1.8"
+        fill="none"
+      />
+      {/* Draped Front Dupatta Sash */}
+      <path
+        d="M138 100 C115 140 75 185 52 255 L88 268 C108 200 132 155 144 115 Z"
+        fill="rgba(180, 32, 58, 0.72)"
+        stroke="url(#brideGold)"
+        strokeWidth="2"
+      />
+      {/* Scattered Gold Butti Motifs */}
+      <circle cx="76" cy="220" r="3" fill="#C9A45C" />
+      <circle cx="110" cy="235" r="3.5" fill="#C9A45C" />
+      <circle cx="144" cy="220" r="3" fill="#C9A45C" />
+      <circle cx="65" cy="285" r="4" fill="#C9A45C" />
+      <circle cx="110" cy="295" r="4" fill="#C9A45C" />
+      <circle cx="155" cy="285" r="4" fill="#C9A45C" />
+    </svg>
+  );
+};
+
+// Detailed Transparent-Background Full-Body Royal Indian Groom Illustration
+const RoyalGroomIllustration = ({ customPng, className = 'h-48 sm:h-56' }) => {
+  if (customPng) {
+    return (
+      <img
+        src={customPng}
+        alt="Groom Aarav Rajput in ivory sherwani and maroon stole"
+        className={`object-contain select-none drop-shadow-[0_12px_20px_rgba(30,5,10,0.5)] ${className}`}
+      />
+    );
+  }
+
+  return (
+    <svg
+      viewBox="0 0 220 380"
+      fill="none"
+      className={`select-none drop-shadow-[0_12px_20px_rgba(30,5,10,0.45)] ${className}`}
+      role="img"
+      aria-label="Illustrated Indian Groom Aarav Rajput in ivory sherwani, maroon stole and royal safa"
+    >
+      <defs>
+        <linearGradient id="sherwaniIvory" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#FFFDF9" />
+          <stop offset="65%" stopColor="#F5E6CE" />
+          <stop offset="100%" stopColor="#DEC59B" />
+        </linearGradient>
+        <linearGradient id="groomMaroon" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#8C1D35" />
+          <stop offset="100%" stopColor="#541522" />
+        </linearGradient>
+        <linearGradient id="groomGold" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#F3DC99" />
+          <stop offset="50%" stopColor="#C9A45C" />
+          <stop offset="100%" stopColor="#8F6B29" />
+        </linearGradient>
+      </defs>
+
+      {/* Kalgi Feather Plume on Safa */}
+      <path
+        d="M118 28 C128 8 148 4 152 14 C144 20 132 24 122 32 Z"
+        fill="#FFF6E8"
+        stroke="url(#groomGold)"
+        strokeWidth="1.5"
+      />
+      <circle cx="118" cy="30" r="5" fill="url(#groomGold)" stroke="#541522" strokeWidth="1.2" />
+
+      {/* Traditional Royal Rajasthani Safa (Turban) */}
+      <path
+        d="M80 48 C76 26 98 16 116 20 C136 22 146 34 140 50 C130 42 92 42 80 48 Z"
+        fill="url(#groomMaroon)"
+        stroke="url(#groomGold)"
+        strokeWidth="2"
+      />
+      <path
+        d="M84 36 Q112 24 138 38"
+        stroke="url(#groomGold)"
+        strokeWidth="2"
+      />
+      {/* Safa Tail (Palla) */}
+      <path
+        d="M134 45 C146 62 150 82 144 98"
+        stroke="url(#groomMaroon)"
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+
+      {/* Neck & Face */}
+      <rect x="102" y="74" width="16" height="18" rx="5" fill="#DDA982" />
+      <path
+        d="M88 48 C88 38 132 38 132 48 C132 68 122 79 110 79 C98 79 88 68 88 48 Z"
+        fill="#E5B592"
+      />
+
+      {/* Groom Facial Features & Well-Groomed Beard/Mustache */}
+      <path d="M95 53 Q101 51 106 53" stroke="#231416" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M114 53 Q119 51 125 53" stroke="#231416" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="101" cy="58" r="1.8" fill="#231416" />
+      <circle cx="119" cy="58" r="1.8" fill="#231416" />
+      {/* Royal Tilak on Forehead */}
+      <path d="M110 44 L110 51" stroke="#9E1B34" strokeWidth="2.2" strokeLinecap="round" />
+      {/* Mustache & Gentle Smile */}
+      <path
+        d="M100 68 Q105 65 110 67 Q115 65 120 68"
+        stroke="#2A181A"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M90 62 C90 74 100 79 110 79 C120 79 130 74 130 62"
+        stroke="#2A181A"
+        strokeWidth="3.5"
+        strokeOpacity="0.65"
+        fill="none"
+      />
+
+      {/* Churidar Legs */}
+      <rect x="88" y="275" width="16" height="72" rx="7" fill="#F5E6CE" stroke="#C9A45C" strokeWidth="1" />
+      <rect x="116" y="275" width="16" height="72" rx="7" fill="#F5E6CE" stroke="#C9A45C" strokeWidth="1" />
+      {/* Royal Maroon & Gold Mojari Footwear */}
+      <path
+        d="M78 352 C82 344 98 344 104 348 L104 356 L78 356 Z"
+        fill="url(#groomMaroon)"
+        stroke="url(#groomGold)"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M142 352 C138 344 122 344 116 348 L116 356 L142 356 Z"
+        fill="url(#groomMaroon)"
+        stroke="url(#groomGold)"
+        strokeWidth="1.5"
+      />
+
+      {/* Ivory & Antique Gold Embroidered Sherwani Coat */}
+      <path
+        d="M74 92 L146 92 L156 290 L64 290 Z"
+        fill="url(#sherwaniIvory)"
+        stroke="url(#groomGold)"
+        strokeWidth="2.2"
+      />
+      {/* Mandarin Bandhgala Collar */}
+      <path
+        d="M96 84 L124 84 L128 95 L92 95 Z"
+        fill="#541522"
+        stroke="url(#groomGold)"
+        strokeWidth="1.8"
+      />
+      {/* Sherwani Center Placket & Antique Gold Buttons */}
+      <line x1="110" y1="95" x2="110" y2="290" stroke="url(#groomGold)" strokeWidth="2" />
+      <line x1="110" y1="245" x2="104" y2="290" stroke="#541522" strokeWidth="2" />
+      <line x1="110" y1="245" x2="116" y2="290" stroke="#541522" strokeWidth="2" />
+      {[106, 120, 134, 148, 162, 176, 190, 204].map((cy) => (
+        <circle key={cy} cx="110" cy={cy} r="2.6" fill="url(#groomGold)" stroke="#541522" strokeWidth="0.6" />
+      ))}
+
+      {/* Multi-layered Emerald & Pearl Panchlada Haar */}
+      <path d="M92 94 Q110 124 128 94" stroke="#2D6A4F" strokeWidth="2.5" strokeDasharray="3 2" fill="none" />
+      <path d="M88 96 Q110 136 132 96" stroke="url(#groomGold)" strokeWidth="2" strokeDasharray="2 3" fill="none" />
+      <path d="M85 98 Q110 148 135 98" stroke="#2D6A4F" strokeWidth="2.5" strokeDasharray="3 2" fill="none" />
+
+      {/* Maroon Velvet Royal Stole (Dupatta) with Gold Border */}
+      <path
+        d="M72 90 L94 90 C90 155 118 195 152 225 L146 252 C104 218 74 172 72 90 Z"
+        fill="url(#groomMaroon)"
+        stroke="url(#groomGold)"
+        strokeWidth="2"
+      />
+      <path
+        d="M146 90 L158 90 L164 238 L148 238 Z"
+        fill="url(#groomMaroon)"
+        stroke="url(#groomGold)"
+        strokeWidth="1.8"
+      />
+
+      {/* Sherwani Arms & Folded Royal Posture */}
+      <path
+        d="M74 95 C55 128 58 164 94 172"
+        stroke="url(#sherwaniIvory)"
+        strokeWidth="15"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M146 95 C165 128 162 164 126 172"
+        stroke="url(#sherwaniIvory)"
+        strokeWidth="15"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Gold Cuff Borders */}
+      <circle cx="98" cy="172" r="7" fill="#E5B592" />
+      <circle cx="122" cy="172" r="7" fill="#E5B592" />
+      <rect x="102" y="168" width="16" height="8" rx="4" fill="#DDA982" />
+
+      {/* Sherwani Hem Zardozi Border */}
+      <path
+        d="M65 272 L155 272 L156 289 L64 289 Z"
+        fill="rgba(201,164,92,0.28)"
+        stroke="url(#groomGold)"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+};
+
+// Event Card Ornamental Icons
+const EventOrnamentIcon = ({ type }) => {
+  switch (type) {
+    case 'lotus':
+      return (
+        <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
+          <path
+            d="M24 8 C28 16 32 22 24 34 C16 22 20 16 24 8 Z"
+            fill="rgba(201,164,92,0.25)"
+            stroke="#C9A45C"
+            strokeWidth="1.6"
+          />
+          <path
+            d="M24 34 C32 24 40 20 42 28 C38 35 30 36 24 34 Z"
+            fill="rgba(201,164,92,0.15)"
+            stroke="#C9A45C"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M24 34 C16 24 8 20 6 28 C10 35 18 36 24 34 Z"
+            fill="rgba(201,164,92,0.15)"
+            stroke="#C9A45C"
+            strokeWidth="1.5"
+          />
+          <line x1="12" y1="39" x2="36" y2="39" stroke="#C9A45C" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    case 'paisley':
+      return (
+        <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
+          <path
+            d="M28 8 C16 8 10 18 12 28 C14 37 23 41 31 36 C38 31 38 19 30 15 C25 12 21 16 23 20"
+            stroke="#C9A45C"
+            strokeWidth="1.8"
+            fill="rgba(201,164,92,0.18)"
+            strokeLinecap="round"
+          />
+          <circle cx="24" cy="27" r="3" fill="#C9A45C" />
+        </svg>
+      );
+    case 'sitar':
+      return (
+        <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
+          <circle cx="16" cy="32" r="9" fill="rgba(201,164,92,0.2)" stroke="#C9A45C" strokeWidth="1.8" />
+          <line x1="22" y1="26" x2="39" y2="9" stroke="#C9A45C" strokeWidth="2.5" strokeLinecap="round" />
+          <circle cx="16" cy="32" r="3" fill="#C9A45C" />
+          <line x1="34" y1="10" x2="38" y2="14" stroke="#C9A45C" strokeWidth="1.5" />
+          <line x1="31" y1="13" x2="35" y2="17" stroke="#C9A45C" strokeWidth="1.5" />
+        </svg>
+      );
+    case 'kalash':
+      return (
+        <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
+          <circle cx="24" cy="14" r="5" fill="rgba(201,164,92,0.3)" stroke="#C9A45C" strokeWidth="1.6" />
+          <path d="M24 14 C18 10 12 14 14 19 M24 14 C30 10 36 14 34 19" stroke="#C9A45C" strokeWidth="1.5" />
+          <path
+            d="M17 20 L31 20 C35 25 36 34 30 39 L18 39 C12 34 13 25 17 20 Z"
+            fill="rgba(201,164,92,0.2)"
+            stroke="#C9A45C"
+            strokeWidth="1.8"
+          />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none">
+          <path
+            d="M8 38 L40 38 M12 38 L12 24 Q24 10 36 24 L36 38"
+            stroke="#C9A45C"
+            strokeWidth="1.8"
+            fill="rgba(201,164,92,0.18)"
+          />
+          <circle cx="24" cy="11" r="2.5" fill="#C9A45C" />
+        </svg>
+      );
+  }
+};
+
+// ============================================================================
+// 3. FLOATING PETALS & SUBTLE GOLD PARTICLES BACKGROUND
+// ============================================================================
+const AmbientRoyalParticles = ({ reducedMotion }) => {
+  const petals = useMemo(
+    () => [
+      { id: 1, left: '8%', size: 12, duration: '15s', delay: '0s', type: 'petal' },
+      { id: 2, left: '22%', size: 8, duration: '18s', delay: '3s', type: 'spark' },
+      { id: 3, left: '38%', size: 14, duration: '16s', delay: '1.5s', type: 'petal' },
+      { id: 4, left: '54%', size: 7, duration: '20s', delay: '4s', type: 'spark' },
+      { id: 5, left: '68%', size: 11, duration: '14s', delay: '2s', type: 'petal' },
+      { id: 6, left: '82%', size: 9, duration: '17s', delay: '5s', type: 'spark' },
+      { id: 7, left: '91%', size: 13, duration: '19s', delay: '0.8s', type: 'petal' }
+    ],
+    []
+  );
+
+  if (reducedMotion) return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden z-10" aria-hidden="true">
+      {petals.map((item) =>
+        item.type === 'petal' ? (
+          <div
+            key={item.id}
+            style={{
+              left: item.left,
+              width: `${item.size}px`,
+              height: `${item.size * 1.25}px`,
+              animationDuration: item.duration,
+              animationDelay: item.delay
+            }}
+            className="royal-falling-petal absolute -top-6 rounded-tl-full rounded-br-full bg-gradient-to-br from-[#D9A8A9] via-[#9E1B34] to-[#541522] opacity-60 shadow-sm"
+          />
+        ) : (
+          <div
+            key={item.id}
+            style={{
+              left: item.left,
+              width: `${item.size / 2}px`,
+              height: `${item.size / 2}px`,
+              animationDuration: item.duration,
+              animationDelay: item.delay
+            }}
+            className="royal-floating-sparkle absolute bottom-4 rounded-full bg-[#C9A45C] opacity-55 shadow-[0_0_8px_#C9A45C]"
+          />
+        )
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// 4. FLOATING MUSIC PLAYER (Web Audio Royal Sitar Synth + Custom MP3 URL/Upload)
+// ============================================================================
+const MusicPlayer = ({ customAudioUrl, customAudioName, onOpenCustomizer }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.65);
+  const [isMuted, setIsMuted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [audioStatusMsg, setAudioStatusMsg] = useState(
+    'Royal Classical Raga (Built-in Synth Ready)'
+  );
+
+  const audioElRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const synthIntervalRef = useRef(null);
+  const masterGainRef = useRef(null);
+
+  const stopRagaSynth = useCallback(() => {
+    if (synthIntervalRef.current) {
+      clearInterval(synthIntervalRef.current);
+      synthIntervalRef.current = null;
+    }
+    if (audioCtxRef.current && audioCtxRef.current.state === 'running') {
+      audioCtxRef.current.suspend().catch(() => {});
+    }
+  }, []);
+
+  const startRagaSynth = useCallback(() => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      if (!audioCtxRef.current) {
+        const ctx = new AudioContextClass();
+        const masterGain = ctx.createGain();
+        masterGain.gain.value = isMuted ? 0 : volume * 0.25;
+        masterGain.connect(ctx.destination);
+        audioCtxRef.current = ctx;
+        masterGainRef.current = masterGain;
+      }
+
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      if (synthIntervalRef.current) clearInterval(synthIntervalRef.current);
+
+      const ragaNotes = [261.63, 293.66, 329.63, 370.0, 392.0, 440.0, 493.88, 523.25];
+      let step = 0;
+
+      const playPluck = () => {
+        if (!audioCtxRef.current || audioCtxRef.current.state !== 'running') return;
+        const now = ctx.currentTime;
+
+        if (step % 4 === 0) {
+          const droneOsc = ctx.createOscillator();
+          const droneGain = ctx.createGain();
+          droneOsc.type = 'sine';
+          droneOsc.frequency.setValueAtTime(step % 8 === 0 ? 130.81 : 196.0, now);
+          droneGain.gain.setValueAtTime(0.001, now);
+          droneGain.gain.linearRampToValueAtTime(0.18, now + 0.8);
+          droneGain.gain.exponentialRampToValueAtTime(0.001, now + 3.4);
+          droneOsc.connect(droneGain);
+          droneGain.connect(masterGainRef.current);
+          droneOsc.start(now);
+          droneOsc.stop(now + 3.5);
+        }
+
+        const noteFreq = ragaNotes[(step * 3 + (step % 2)) % ragaNotes.length];
+        const osc = ctx.createOscillator();
+        const noteGain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(noteFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(noteFreq * 1.006, now + 0.35);
+
+        noteGain.gain.setValueAtTime(0.001, now);
+        noteGain.gain.linearRampToValueAtTime(0.32, now + 0.04);
+        noteGain.gain.exponentialRampToValueAtTime(0.001, now + 1.45);
+
+        osc.connect(noteGain);
+        noteGain.connect(masterGainRef.current);
+        osc.start(now);
+        osc.stop(now + 1.5);
+
+        step += 1;
+      };
+
+      playPluck();
+      synthIntervalRef.current = setInterval(playPluck, 950);
+    } catch (e) {
+      setAudioStatusMsg('Audio requires user tap to initialize.');
+    }
+  }, [isMuted, volume]);
+
+  useEffect(() => {
+    const effectiveVol = isMuted ? 0 : volume;
+    if (audioElRef.current) {
+      audioElRef.current.volume = effectiveVol;
+    }
+    if (masterGainRef.current && audioCtxRef.current) {
+      masterGainRef.current.gain.setValueAtTime(
+        effectiveVol * 0.25,
+        audioCtxRef.current.currentTime
+      );
+    }
+  }, [volume, isMuted]);
+
+  useEffect(() => {
+    if (customAudioUrl) {
+      stopRagaSynth();
+      setAudioStatusMsg(customAudioName || 'Custom Wedding Audio Track');
+      if (isPlaying && audioElRef.current) {
+        audioElRef.current.play().catch(() => {
+          setIsPlaying(false);
+        });
+      }
+    } else {
+      setAudioStatusMsg('Royal Sitar & Tanpura Raga (Built-in)');
+    }
+  }, [customAudioUrl, customAudioName, isPlaying, stopRagaSynth]);
+
+  useEffect(() => {
+    return () => {
+      stopRagaSynth();
+    };
+  }, [stopRagaSynth]);
+
+  const togglePlay = () => {
+    if (isPlaying) {
+      if (customAudioUrl && audioElRef.current) {
+        audioElRef.current.pause();
+      } else {
+        stopRagaSynth();
+      }
+      setIsPlaying(false);
+    } else {
+      if (customAudioUrl && audioElRef.current) {
+        audioElRef.current
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => {
+            setAudioStatusMsg('Unable to play audio URL. Check link or format.');
+            setIsPlaying(false);
+          });
+      } else {
+        startRagaSynth();
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  return (
+    <div className="fixed top-3 right-3 sm:top-5 sm:right-5 z-40 flex items-center gap-2">
+      {customAudioUrl && <audio ref={audioElRef} src={customAudioUrl} loop preload="auto" />}
+
+      {expanded && (
+        <div className="flex flex-col gap-1.5 bg-[#541522]/95 backdrop-blur-md border border-[#C9A45C]/60 rounded-2xl px-3.5 py-2.5 text-[#FFF6E8] shadow-2xl max-w-[230px] sm:max-w-xs animate-fadeIn">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-widest text-[#C9A45C] font-semibold flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> Royal Music
+            </span>
+            <button
+              onClick={() => setExpanded(false)}
+              className="text-[#D9A8A9] hover:text-[#FFF6E8] p-0.5"
+              aria-label="Minimize music panel"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <p className="text-[11px] text-[#FFF6E8]/80 leading-snug truncate" title={audioStatusMsg}>
+            {audioStatusMsg}
+          </p>
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => setIsMuted((m) => !m)}
+              className="p-1 rounded-lg hover:bg-[#741F32] text-[#C9A45C] transition"
+              aria-label={isMuted ? 'Unmute music' : 'Mute music'}
+            >
+              {isMuted || volume === 0 ? (
+                <VolumeX className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={isMuted ? 0 : volume}
+              onChange={(e) => {
+                setIsMuted(false);
+                setVolume(parseFloat(e.target.value));
+              }}
+              aria-label="Music volume"
+              className="w-full accent-[#C9A45C] h-1.5 bg-[#342020] rounded-lg cursor-pointer"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center bg-[#541522]/90 backdrop-blur-md border border-[#C9A45C]/70 rounded-full p-1 shadow-[0_6px_20px_rgba(0,0,0,0.45)]">
+        <button
+          onClick={togglePlay}
+          aria-label={isPlaying ? 'Pause wedding music' : 'Play wedding music'}
+          className="relative flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-[#FFF6E8] hover:bg-[#741F32]/70 transition"
+        >
+          <span
+            className={`w-6 h-6 rounded-full bg-gradient-to-tr from-[#C9A45C] to-[#FFF6E8] text-[#541522] flex items-center justify-center shadow-inner ${
+              isPlaying ? 'animate-spin' : ''
+            }`}
+            style={{ animationDuration: '6s' }}
+          >
+            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+          </span>
+          <span className="hidden sm:inline tracking-wider uppercase text-[11px] text-[#C9A45C]">
+            {isPlaying ? 'Playing' : 'Music'}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setExpanded((prev) => !prev)}
+          aria-label="Toggle volume settings"
+          className="p-1.5 rounded-full text-[#C9A45C] hover:text-[#FFF6E8] transition"
+        >
+          <Music className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 5. CARD 01 — GRAND OPENING (Fixed Arch Safe-Area, Zero Font Overlap, Responsive Fit)
+// ============================================================================
+const OpeningCard = ({ config, onOpenInvitation, reducedMotion }) => {
+  const [doorsOpening, setDoorsOpening] = useState(false);
+
+  const handleTriggerOpen = () => {
+    if (doorsOpening) return;
+    if (reducedMotion) {
+      onOpenInvitation();
+      return;
+    }
+    setDoorsOpening(true);
+    setTimeout(() => {
+      onOpenInvitation();
+    }, 950);
+  };
+
+  return (
+    <section
+      aria-label="Card 01: Grand Opening Invitation Cover"
+      className="relative w-full h-full flex flex-col justify-between items-center text-center px-9 pt-16 pb-6 sm:px-12 sm:pt-20 sm:pb-8 overflow-hidden select-none"
+    >
+      {/* Ornamental Mughal Arch Frame */}
+      <RoyalMughalArchSVG className="absolute inset-2 sm:inset-3 w-[calc(100%-16px)] sm:w-[calc(100%-24px)] h-[calc(100%-16px)] sm:h-[calc(100%-24px)] z-10" />
+
+      {/* 4 Floral Corners */}
+      <FloralCornerSVG className="absolute top-3 left-3 w-10 h-10 sm:w-12 sm:h-12 z-10" />
+      <FloralCornerSVG className="absolute top-3 right-3 w-10 h-10 sm:w-12 sm:h-12 z-10" flipX />
+      <FloralCornerSVG className="absolute bottom-3 left-3 w-10 h-10 sm:w-12 sm:h-12 z-10" flipY />
+      <FloralCornerSVG
+        className="absolute bottom-3 right-3 w-10 h-10 sm:w-12 sm:h-12 z-10"
+        flipX
+        flipY
+      />
+
+      {/* Hanging Jhumars tucked safely inside arch sides */}
+      <div className="absolute top-3 left-10 sm:left-14 z-10 opacity-80 royal-sway pointer-events-none">
+        <HangingJhumarSVG className="w-6 h-14 sm:w-7 sm:h-18" />
+      </div>
+      <div
+        className="absolute top-3 right-10 sm:right-14 z-10 opacity-80 royal-sway pointer-events-none"
+        style={{ animationDelay: '1.2s' }}
+      >
+        <HangingJhumarSVG className="w-6 h-14 sm:w-7 sm:h-18" />
+      </div>
+
+      {/* Animated Split Royal Palace Doors Overlay when Opening */}
+      <div
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 z-30 flex transition-opacity duration-500 ${
+          doorsOpening ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        <div
+          className={`w-1/2 h-full bg-gradient-to-r from-[#340B14] to-[#541522] border-r-2 border-[#C9A45C] transition-transform duration-1000 ease-in-out flex items-center justify-end pr-4 ${
+            doorsOpening ? '-translate-x-full' : 'translate-x-0'
+          }`}
+        >
+          <div className="w-8 h-16 rounded-l-full border-2 border-[#C9A45C] bg-[#741F32]/60" />
+        </div>
+        <div
+          className={`w-1/2 h-full bg-gradient-to-l from-[#340B14] to-[#541522] border-l-2 border-[#C9A45C] transition-transform duration-1000 ease-in-out flex items-center justify-start pl-4 ${
+            doorsOpening ? 'translate-x-full' : 'translate-x-0'
+          }`}
+        >
+          <div className="w-8 h-16 rounded-r-full border-2 border-[#C9A45C] bg-[#741F32]/60" />
+        </div>
+      </div>
+
+      {/* Top Royal Crest & Header — Constrained safely inside Mughal Arch */}
+      <div className="relative z-20 w-full max-w-[240px] sm:max-w-[290px] mx-auto flex flex-col items-center space-y-1">
+        <div className="px-3 py-0.5 rounded-full border border-[#C9A45C]/50 bg-[#741F32]/85 text-[9px] sm:text-[10px] uppercase tracking-[0.15em] text-[#C9A45C] shadow-sm">
+          || Shree Ganeshaya Namah ||
+        </div>
+
+        <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.2em] text-[#D9A8A9] font-medium pt-0.5">
+          A Royal Celebration
+        </p>
+
+        <h1 className="royal-serif text-2xl sm:text-3xl font-bold text-[#FFF6E8] leading-snug tracking-wide px-1 break-words drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
+          <span>{config.couple.brideShort}</span>{' '}
+          <span className="text-[#C9A45C] font-normal italic px-0.5">&amp;</span>{' '}
+          <span>{config.couple.groomShort}</span>
+        </h1>
+
+        <div className="flex items-center justify-center gap-2 pt-0.5 w-full">
+          <span className="h-[1px] w-5 sm:w-8 bg-gradient-to-r from-transparent to-[#C9A45C]" />
+          <p className="text-[10px] sm:text-xs tracking-[0.16em] uppercase text-[#C9A45C] font-semibold whitespace-nowrap">
+            {config.weddingDateDisplay}
+          </p>
+          <span className="h-[1px] w-5 sm:w-8 bg-gradient-to-l from-transparent to-[#C9A45C]" />
+        </div>
+
+        <p className="text-[10px] sm:text-xs text-[#FFF6E8]/85 truncate max-w-full">
+          {config.venue.shortCity}
+        </p>
+      </div>
+
+      {/* Central & Lower Portion: Bride & Groom PNG/SVG Illustrations + Ornamental Diyas */}
+      <div
+        className={`relative z-20 flex flex-col items-center justify-center w-full my-0.5 transition-all duration-700 ${
+          doorsOpening ? 'scale-105 opacity-95' : 'scale-100'
+        }`}
+      >
+        <div className="absolute inset-x-12 bottom-4 top-2 rounded-t-full bg-gradient-to-b from-[#C9A45C]/15 via-[#741F32]/30 to-transparent blur-md -z-10" />
+
+        <div className="flex items-end justify-center gap-1 sm:gap-2.5 relative">
+          <div className="transform transition duration-700 hover:-translate-y-1">
+            <RoyalBrideIllustration
+              customPng={config.assets.bridePng}
+              className="h-32 sm:h-44 w-auto max-w-[115px] sm:max-w-[140px]"
+            />
+          </div>
+          <div className="transform transition duration-700 hover:-translate-y-1">
+            <RoyalGroomIllustration
+              customPng={config.assets.groomPng}
+              className="h-32 sm:h-44 w-auto max-w-[115px] sm:max-w-[140px]"
+            />
+          </div>
+        </div>
+
+        {/* Flanking Ornamental Diyas with clean non-overlapping spacing */}
+        <div className="flex items-center justify-between w-full max-w-[235px] sm:max-w-[280px] -mt-1.5 z-20 px-2">
+          <OrnamentalDiyaSVG className="w-7 h-7 sm:w-9 sm:h-9 flex-shrink-0" />
+          <span className="text-[9px] sm:text-[10px] uppercase tracking-[0.18em] text-[#C9A45C]/90 font-medium px-2 whitespace-nowrap">
+            Royal Union
+          </span>
+          <OrnamentalDiyaSVG className="w-7 h-7 sm:w-9 sm:h-9 flex-shrink-0" />
+        </div>
+      </div>
+
+      {/* Primary CTA Button */}
+      <div className="relative z-20 pt-1 w-full max-w-[260px] sm:max-w-[300px] flex flex-col items-center">
+        <button
+          onClick={handleTriggerOpen}
+          className="w-full group relative inline-flex items-center justify-center gap-2 px-4 py-3 sm:px-6 sm:py-3.5 rounded-full bg-gradient-to-r from-[#B88E42] via-[#DEC07B] to-[#B88E42] text-[#342020] font-bold text-[10px] sm:text-xs tracking-[0.15em] uppercase shadow-[0_10px_28px_rgba(201,164,92,0.4)] hover:shadow-[0_12px_34px_rgba(201,164,92,0.65)] active:scale-95 transition-all duration-300 border border-[#FFF6E8]/60"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-[#541522] flex-shrink-0 transition-transform group-hover:rotate-45" />
+          <span className="truncate">OPEN YOUR INVITATION</span>
+          <ChevronRight className="w-3.5 h-3.5 text-[#541522] flex-shrink-0 transition-transform group-hover:translate-x-1" />
+        </button>
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// 6. CARD 02 — THE COUPLE
+// ============================================================================
+const CoupleCard = ({ config, onOpenImageModal, onNextCard }) => {
+  return (
+    <section
+      aria-label="Card 02: The Couple"
+      className="relative w-full h-full flex flex-col justify-between items-center text-center px-9 py-6 sm:px-11 sm:py-8 overflow-y-auto no-scrollbar"
+    >
+      <FloralCornerSVG className="absolute top-3 left-3 w-11 h-11 z-10" />
+      <FloralCornerSVG className="absolute top-3 right-3 w-11 h-11 z-10" flipX />
+      <FloralCornerSVG className="absolute bottom-3 left-3 w-11 h-11 z-10" flipY />
+      <FloralCornerSVG className="absolute bottom-3 right-3 w-11 h-11 z-10" flipX flipY />
+
+      {/* Top Tagline */}
+      <div className="z-20 pt-1 max-w-[270px] sm:max-w-xs mx-auto">
+        <span className="text-[10px] uppercase tracking-[0.24em] text-[#C9A45C] block">
+          The Royal Couple
+        </span>
+        <h2 className="royal-serif text-lg sm:text-2xl text-[#FFF6E8] font-semibold mt-0.5 italic leading-snug">
+          &ldquo;{config.couple.tagline}&rdquo;
+        </h2>
+      </div>
+
+      {/* Framed Couple Portrait (Clickable for Lightbox) */}
+      <div className="z-20 my-1.5 flex flex-col items-center">
+        <button
+          onClick={() =>
+            onOpenImageModal({
+              url: config.assets.couplePortrait,
+              title: `${config.couple.brideName} & ${config.couple.groomName}`,
+              caption: config.couple.invitationMessage
+            })
+          }
+          className="group relative p-2 rounded-t-full rounded-b-3xl bg-gradient-to-b from-[#E6C987] via-[#C9A45C] to-[#8F6B29] shadow-[0_14px_35px_rgba(0,0,0,0.5)] focus:outline-none focus:ring-2 focus:ring-[#FFF6E8]"
+          aria-label="Tap to view larger couple portrait"
+        >
+          <div className="relative w-36 h-44 sm:w-44 sm:h-52 rounded-t-full rounded-b-2xl overflow-hidden border-2 border-[#541522]">
+            <img
+              src={config.assets.couplePortrait}
+              alt={`${config.couple.brideName} and ${config.couple.groomName} royal portrait`}
+              className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-700"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#342020]/70 via-transparent to-transparent opacity-80 group-hover:opacity-50 transition-opacity" />
+            <span className="absolute bottom-2 right-2 bg-[#541522]/85 text-[#FFF6E8] p-1.5 rounded-full border border-[#C9A45C]/60 shadow">
+              <Maximize2 className="w-3 h-3 text-[#C9A45C]" />
+            </span>
+          </div>
+        </button>
+        <span className="text-[9px] text-[#D9A8A9] mt-1 tracking-wider uppercase">
+          Tap portrait to enlarge
+        </span>
+      </div>
+
+      {/* Progressive Text Reveal of Couple Names & Invitation Message */}
+      <div className="z-20 max-w-[290px] sm:max-w-sm space-y-1.5">
+        <div className="space-y-0.5">
+          <h3 className="royal-serif text-xl sm:text-2xl text-[#FFF6E8] font-bold tracking-wide leading-tight">
+            {config.couple.brideName}
+          </h3>
+          <div className="flex items-center justify-center gap-2 text-[#C9A45C] py-0.5">
+            <span className="h-[1px] w-8 bg-[#C9A45C]/50" />
+            <Heart className="w-3 h-3 fill-[#C9A45C]" />
+            <span className="h-[1px] w-8 bg-[#C9A45C]/50" />
+          </div>
+          <h3 className="royal-serif text-xl sm:text-2xl text-[#FFF6E8] font-bold tracking-wide leading-tight">
+            {config.couple.groomName}
+          </h3>
+        </div>
+
+        <p className="text-xs text-[#FFF6E8]/90 leading-relaxed pt-0.5">
+          {config.couple.invitationMessage}
+        </p>
+        <p className="text-[11px] text-[#D9A8A9] leading-relaxed italic">
+          {config.couple.storyMessage}
+        </p>
+      </div>
+
+      {/* Next Card Action */}
+      <div className="z-20 pt-1.5">
+        <button
+          onClick={onNextCard}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-[#C9A45C] bg-[#741F32]/80 hover:bg-[#C9A45C] text-[#FFF6E8] hover:text-[#342020] text-[11px] uppercase tracking-[0.18em] font-semibold transition-all duration-300 shadow-md"
+        >
+          <span>Explore Memories</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// 7. CARD 03 — OUR MEMORIES (Editorial Pre-Wedding Gallery on Soft Warm Ivory)
+// ============================================================================
+const GalleryCard = ({ config, onSelectGalleryIndex }) => {
+  return (
+    <section
+      aria-label="Card 03: Our Memories Pre-Wedding Gallery"
+      className="relative w-full h-full flex flex-col justify-between bg-[#FFF6E8] text-[#342020] px-5 py-6 sm:px-7 sm:py-7 overflow-y-auto no-scrollbar"
+    >
+      {/* Subtle Ornamental Border */}
+      <div className="pointer-events-none absolute inset-2.5 rounded-2xl border border-[#C9A45C]/65 z-10" />
+
+      {/* Header */}
+      <div className="relative z-20 text-center pt-1">
+        <span className="text-[10px] uppercase tracking-[0.28em] text-[#741F32] font-bold block">
+          Captured Moments
+        </span>
+        <h2 className="royal-serif text-2xl sm:text-3xl font-bold text-[#541522] mt-0.5">
+          Our Memories
+        </h2>
+        <p className="text-[11px] text-[#342020]/75 mt-0.5">
+          Tap any photograph to view full screen
+        </p>
+      </div>
+
+      {/* Asymmetric 6-Photo Editorial Grid */}
+      <div className="relative z-20 grid grid-cols-2 sm:grid-cols-3 gap-2.5 my-3">
+        {config.gallery.map((item, idx) => {
+          const spanClass =
+            idx === 0
+              ? 'col-span-2 sm:col-span-2 h-36 sm:h-40'
+              : idx === 3
+              ? 'col-span-2 sm:col-span-1 h-32 sm:h-40'
+              : 'col-span-1 h-32 sm:h-36';
+
+          return (
+            <button
+              key={item.id || idx}
+              onClick={() => onSelectGalleryIndex(idx)}
+              className={`group relative rounded-xl overflow-hidden border-2 border-[#C9A45C] bg-[#541522] shadow-md focus:outline-none focus:ring-2 focus:ring-[#541522] text-left ${spanClass}`}
+              aria-label={`Open memory ${idx + 1}: ${item.title}`}
+            >
+              <img
+                src={item.url}
+                alt={`${item.title} — ${item.caption}`}
+                loading="lazy"
+                className="w-full h-full object-cover object-center group-hover:scale-110 transition-transform duration-700"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#340B14]/85 via-[#340B14]/20 to-transparent opacity-85 group-hover:opacity-95 transition-opacity" />
+              <div className="absolute bottom-2 left-2.5 right-2.5 flex items-end justify-between gap-1">
+                <div>
+                  <span className="text-[9px] uppercase tracking-widest text-[#C9A45C] block font-semibold">
+                    0{idx + 1}
+                  </span>
+                  <h3 className="royal-serif text-xs sm:text-sm font-semibold text-[#FFF6E8] leading-tight">
+                    {item.title}
+                  </h3>
+                </div>
+                <span className="p-1 rounded-full bg-[#541522]/80 border border-[#C9A45C]/60 text-[#C9A45C]">
+                  <Maximize2 className="w-3 h-3" />
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Footer Caption */}
+      <div className="relative z-20 text-center pb-1">
+        <p className="royal-serif italic text-xs sm:text-sm text-[#541522]">
+          &ldquo;Every glance, every laugh, a stepping stone to forever.&rdquo;
+        </p>
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// 8. CARD 04 — SAVE THE DATE (Live Countdown + Valid .ics Calendar Download)
+// ============================================================================
+const CountdownCard = ({ config }) => {
+  const [timeLeft, setTimeLeft] = useState({
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    completed: false
+  });
+  const [icsFeedback, setIcsFeedback] = useState(false);
+
+  useEffect(() => {
+    const targetTimestamp = new Date(config.weddingDateISO).getTime();
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = targetTimestamp - now;
+
+      if (isNaN(targetTimestamp) || diff <= 0) {
+        setTimeLeft({
+          days: 0,
+          hours: 0,
+          minutes: 0,
+          seconds: 0,
+          completed: true
+        });
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / 1000 / 60) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+
+      setTimeLeft({ days, hours, minutes, seconds, completed: false });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [config.weddingDateISO]);
+
+  // Generate & Download a valid .ics calendar invite
+  const handleDownloadICS = () => {
+    const icsLines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Royal Indian Wedding SaaS//Template 01//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:wedding-${Date.now()}@royalwedding.example`,
+      'DTSTAMP:20260101T000000Z',
+      'DTSTART:20270215T133000Z',
+      'DTEND:20270215T183000Z',
+      `SUMMARY:Wedding of ${config.couple.brideName} & ${config.couple.groomName}`,
+      `DESCRIPTION:${config.couple.invitationMessage}`,
+      `LOCATION:${config.venue.name}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ];
+
+    const blob = new Blob([icsLines.join('\r\n')], {
+      type: 'text/calendar;charset=utf-8'
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `${config.couple.brideShort}-${config.couple.groomShort}-Wedding.ics`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setIcsFeedback(true);
+    setTimeout(() => setIcsFeedback(false), 3000);
+  };
+
+  const feb2027Days = Array.from({ length: 28 }, (_, i) => i + 1);
+
+  return (
+    <section
+      aria-label="Card 04: Save the Date and Live Countdown"
+      className="relative w-full h-full flex flex-col justify-between items-center text-center px-6 py-7 sm:px-9 sm:py-8 overflow-y-auto no-scrollbar"
+    >
+      <FloralCornerSVG className="absolute top-3 left-3 w-12 h-12 z-10" />
+      <FloralCornerSVG className="absolute top-3 right-3 w-12 h-12 z-10" flipX />
+      <FloralCornerSVG className="absolute bottom-3 left-3 w-12 h-12 z-10" flipY />
+      <FloralCornerSVG className="absolute bottom-3 right-3 w-12 h-12 z-10" flipX flipY />
+
+      {/* Heading */}
+      <div className="z-20 pt-1">
+        <span className="text-[10px] uppercase tracking-[0.3em] text-[#C9A45C] block">
+          Auspicious Muhurtham
+        </span>
+        <h2 className="royal-serif text-3xl sm:text-4xl font-bold text-[#FFF6E8] mt-0.5">
+          Save the Date
+        </h2>
+        <p className="royal-serif text-lg sm:text-xl text-[#C9A45C] font-semibold mt-0.5">
+          {config.weddingDateDisplay}
+        </p>
+      </div>
+
+      {/* Decorative Royal Mini Calendar for February 2027 */}
+      <div className="z-20 w-full max-w-xs rounded-2xl bg-[#3A0C16]/90 border border-[#C9A45C]/60 p-3.5 shadow-xl my-1">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-[#C9A45C] font-semibold pb-2 mb-2 border-b border-[#C9A45C]/25">
+          February 2027
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-[10px] text-[#D9A8A9] font-semibold mb-1">
+          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+            <span key={i}>{d}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-xs">
+          {feb2027Days.map((day) => {
+            const isWeddingDay = day === 15;
+            const isFestivityDay = day === 13 || day === 14 || day === 16;
+            return (
+              <div
+                key={day}
+                className={`h-6 rounded-full flex items-center justify-center font-medium transition ${
+                  isWeddingDay
+                    ? 'bg-[#C9A45C] text-[#342020] font-bold shadow-[0_0_12px_#C9A45C] scale-110'
+                    : isFestivityDay
+                    ? 'border border-[#C9A45C]/60 text-[#FFF6E8]'
+                    : 'text-[#FFF6E8]/75'
+                }`}
+              >
+                {day}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Live Countdown Timer */}
+      <div className="z-20 w-full max-w-sm my-1">
+        {timeLeft.completed ? (
+          <div className="p-4 rounded-2xl bg-[#741F32]/80 border border-[#C9A45C] text-[#FFF6E8]">
+            <p className="royal-serif text-xl font-semibold text-[#C9A45C]">
+              Happily Married!
+            </p>
+            <p className="text-xs text-[#FFF6E8]/90 mt-1">
+              Thank you for being part of {config.couple.brideShort} &amp;{' '}
+              {config.couple.groomShort}&rsquo;s royal celebration.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 gap-2 sm:gap-3">
+            {[
+              { label: 'Days', value: timeLeft.days },
+              { label: 'Hours', value: timeLeft.hours },
+              { label: 'Minutes', value: timeLeft.minutes },
+              { label: 'Seconds', value: timeLeft.seconds }
+            ].map((unit) => (
+              <div
+                key={unit.label}
+                className="flex flex-col items-center justify-center py-2.5 px-2 rounded-2xl bg-gradient-to-b from-[#741F32] to-[#3A0C16] border border-[#C9A45C]/70 shadow-lg"
+              >
+                <span className="royal-serif text-2xl sm:text-3xl font-bold text-[#C9A45C] tabular-nums leading-none">
+                  {String(unit.value).padStart(2, '0')}
+                </span>
+                <span className="text-[9px] sm:text-[10px] uppercase tracking-widest text-[#FFF6E8]/80 mt-1">
+                  {unit.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add to Calendar (.ics) Button */}
+      <div className="z-20 pt-1">
+        <button
+          onClick={handleDownloadICS}
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-[#B88E42] via-[#DEC07B] to-[#B88E42] text-[#342020] font-bold text-xs uppercase tracking-[0.18em] shadow-lg hover:brightness-105 active:scale-95 transition"
+        >
+          {icsFeedback ? (
+            <>
+              <Check className="w-4 h-4 text-[#541522]" />
+              <span>Calendar Invite Downloaded (.ICS)</span>
+            </>
+          ) : (
+            <>
+              <Calendar className="w-4 h-4 text-[#541522]" />
+              <span>Add to Calendar (.ICS)</span>
+            </>
+          )}
+        </button>
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// 9. CARD 05 — WEDDING FESTIVITIES (5 Expandable Royal Event Cards)
+// ============================================================================
+const EventsCard = ({ config }) => {
+  const [expandedId, setExpandedId] = useState('wedding');
+
+  const toggleEvent = (id) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  return (
+    <section
+      aria-label="Card 05: Wedding Festivities Schedule"
+      className="relative w-full h-full flex flex-col justify-between px-5 py-6 sm:px-7 sm:py-7 overflow-y-auto no-scrollbar"
+    >
+      {/* Header */}
+      <div className="text-center z-20 pb-2">
+        <span className="text-[10px] uppercase tracking-[0.28em] text-[#C9A45C] block">
+          Five Sacred Celebrations
+        </span>
+        <h2 className="royal-serif text-2xl sm:text-3xl font-bold text-[#FFF6E8] mt-0.5">
+          Wedding Festivities
+        </h2>
+        <p className="text-[11px] text-[#D9A8A9] mt-0.5">
+          Tap any celebration to view timing &amp; dress code
+        </p>
+      </div>
+
+      {/* 5 Event Timeline Cards */}
+      <div className="z-20 space-y-2.5 my-1">
+        {config.events.map((ev) => {
+          const isOpen = expandedId === ev.id;
+          return (
+            <div
+              key={ev.id}
+              className={`rounded-2xl border transition-all duration-300 overflow-hidden ${
+                isOpen
+                  ? 'bg-gradient-to-r from-[#741F32] via-[#541522] to-[#3D0D18] border-[#C9A45C] shadow-[0_8px_25px_rgba(0,0,0,0.45)]'
+                  : 'bg-[#3A0C16]/80 border-[#C9A45C]/40 hover:border-[#C9A45C]/75'
+              }`}
+            >
+              <button
+                onClick={() => toggleEvent(ev.id)}
+                aria-expanded={isOpen}
+                className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex-shrink-0 p-1.5 rounded-xl bg-[#541522] border border-[#C9A45C]/50">
+                    <EventOrnamentIcon type={ev.accentType} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="royal-serif text-base sm:text-lg font-bold text-[#FFF6E8] truncate">
+                      {ev.title}
+                    </h3>
+                    <p className="text-[11px] text-[#C9A45C] font-medium truncate">
+                      {ev.date} • {ev.time}
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`flex-shrink-0 w-6 h-6 rounded-full border border-[#C9A45C]/60 flex items-center justify-center text-[#C9A45C] transition-transform duration-300 ${
+                    isOpen ? 'rotate-90 bg-[#C9A45C] text-[#342020]' : ''
+                  }`}
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="px-4 pb-3.5 pt-1 text-left border-t border-[#C9A45C]/25 space-y-1.5 animate-fadeIn">
+                  <p className="text-[11px] uppercase tracking-wider text-[#D9A8A9] font-semibold">
+                    {ev.subtitle}
+                  </p>
+                  <p className="text-xs text-[#FFF6E8]/90 leading-relaxed">
+                    {ev.description}
+                  </p>
+                  <div className="pt-1 flex flex-col gap-1 text-[11px] text-[#C9A45C]">
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="text-[#FFF6E8]">{ev.venue}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        <strong className="text-[#FFF6E8]">Dress Code:</strong> {ev.dressCode}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer Note */}
+      <div className="text-center z-20 pt-1">
+        <p className="text-[10px] uppercase tracking-[0.2em] text-[#C9A45C]/80">
+          All events hosted at {config.venue.name}
+        </p>
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// 10. CARD 06 — THE VENUE & CLOSING (Fixed Arch Boundary & Custom Maps Link Support)
+// ============================================================================
+const VenueCard = ({ config, onRestart }) => {
+  const [shareStatus, setShareStatus] = useState('');
+
+  const googleMapsUrl =
+    config.venue.mapsUrl && config.venue.mapsUrl.trim() !== ''
+      ? config.venue.mapsUrl.trim()
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          config.venue.mapsQuery || config.venue.name
+        )}`;
+
+  const handleShare = async () => {
+    const shareData = {
+      title: `${config.couple.brideShort} & ${config.couple.groomShort} — Royal Wedding Invitation`,
+      text: `${config.couple.invitationMessage} Join us on ${config.weddingDateDisplay} at ${config.venue.name}.`,
+      url: window.location.href
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShareStatus('Shared successfully!');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(`${shareData.title}\n${shareData.text}\n${shareData.url}`);
+        setShareStatus('Invitation link copied to clipboard!');
+      } else {
+        setShareStatus('Ready to share this page URL!');
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        setShareStatus('Invitation summary copied!');
+      }
+    }
+    setTimeout(() => setShareStatus(''), 3500);
+  };
+
+  return (
+    <section
+      aria-label="Card 06: The Venue and Closing"
+      className="relative w-full h-full flex flex-col justify-between items-center text-center px-9 pt-16 pb-6 sm:px-12 sm:pt-20 sm:pb-8 overflow-y-auto no-scrollbar"
+    >
+      <RoyalMughalArchSVG className="absolute inset-2 sm:inset-3 w-[calc(100%-16px)] sm:w-[calc(100%-24px)] h-[calc(100%-16px)] sm:h-[calc(100%-24px)] z-10" />
+      <FloralCornerSVG className="absolute top-3 left-3 w-10 h-10 z-10" />
+      <FloralCornerSVG className="absolute top-3 right-3 w-10 h-10 z-10" flipX />
+
+      {/* Top Header Safely Inside Arch */}
+      <div className="z-20 w-full max-w-[235px] sm:max-w-[280px] mx-auto space-y-0.5">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-[#C9A45C] block">
+          Royal Destination
+        </span>
+        <h2 className="royal-serif text-2xl sm:text-3xl font-bold text-[#FFF6E8] leading-tight">
+          The Venue
+        </h2>
+        <p className="text-xs sm:text-sm text-[#D9A8A9] font-medium pt-0.5 break-words">
+          {config.couple.brideShort} &amp; {config.couple.groomShort}
+        </p>
+      </div>
+
+      {/* Architectural Rajasthani Palace Illustration */}
+      <div className="z-20 w-full max-w-[265px] sm:max-w-[300px] rounded-2xl bg-gradient-to-b from-[#3A0C16] to-[#541522] border-2 border-[#C9A45C] p-3 shadow-2xl my-1">
+        <svg
+          viewBox="0 0 320 130"
+          className="w-full h-20 sm:h-24 mx-auto"
+          fill="none"
+          role="img"
+          aria-label="Architectural illustration of The Royal Orchid Palace in Jaipur"
+        >
+          <circle cx="40" cy="22" r="1.5" fill="#FFF6E8" />
+          <circle cx="280" cy="18" r="1.5" fill="#FFF6E8" />
+          <circle cx="95" cy="12" r="1.2" fill="#C9A45C" />
+          <circle cx="225" cy="14" r="1.2" fill="#C9A45C" />
+          <path
+            d="M125 65 C125 34 160 18 160 12 C160 18 195 34 195 65 Z"
+            fill="rgba(201,164,92,0.28)"
+            stroke="#C9A45C"
+            strokeWidth="2"
+          />
+          <line x1="160" y1="4" x2="160" y2="12" stroke="#C9A45C" strokeWidth="2" />
+          <path
+            d="M55 72 C55 50 75 40 75 34 C75 40 95 50 95 72 Z"
+            fill="rgba(201,164,92,0.2)"
+            stroke="#C9A45C"
+            strokeWidth="1.6"
+          />
+          <path
+            d="M225 72 C225 50 245 40 245 34 C245 40 265 50 265 72 Z"
+            fill="rgba(201,164,92,0.2)"
+            stroke="#C9A45C"
+            strokeWidth="1.6"
+          />
+          <rect
+            x="35"
+            y="65"
+            width="250"
+            height="55"
+            fill="#741F32"
+            stroke="#C9A45C"
+            strokeWidth="2"
+          />
+          {[60, 100, 140, 180, 220, 260].map((x) => (
+            <path
+              key={x}
+              d={`M${x - 12} 120 L${x - 12} 90 Q${x} 76 ${x + 12} 90 L${x + 12} 120`}
+              fill="#340B14"
+              stroke="#C9A45C"
+              strokeWidth="1.4"
+            />
+          ))}
+          <line x1="15" y1="120" x2="305" y2="120" stroke="#C9A45C" strokeWidth="2.5" />
+        </svg>
+
+        <h3 className="royal-serif text-sm sm:text-base font-bold text-[#FFF6E8] mt-1.5 leading-snug break-words px-1">
+          {config.venue.name}
+        </h3>
+        <p className="text-[10px] sm:text-[11px] text-[#C9A45C] tracking-wider uppercase mt-0.5">
+          {config.weddingDateDisplay}
+        </p>
+      </div>
+
+      {/* Closing Message */}
+      <p className="z-20 royal-serif italic text-xs sm:text-sm text-[#FFF6E8]/95 max-w-[255px] sm:max-w-[290px] leading-relaxed px-2">
+        &ldquo;{config.couple.closingMessage}&rdquo;
+      </p>
+
+      {/* Action Buttons */}
+      <div className="z-20 w-full max-w-[265px] sm:max-w-[300px] space-y-2 pb-1">
+        <a
+          href={googleMapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 rounded-full bg-gradient-to-r from-[#B88E42] via-[#DEC07B] to-[#B88E42] text-[#342020] font-bold text-[10px] sm:text-xs uppercase tracking-[0.15em] shadow-lg hover:brightness-105 transition"
+        >
+          <MapPin className="w-3.5 h-3.5 text-[#541522] flex-shrink-0" />
+          <span>OPEN IN GOOGLE MAPS</span>
+        </a>
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleShare}
+            className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-full border border-[#C9A45C] bg-[#741F32]/80 hover:bg-[#C9A45C] text-[#FFF6E8] hover:text-[#342020] text-[10px] uppercase tracking-wider font-semibold transition"
+          >
+            <Share2 className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">SHARE INVITE</span>
+          </button>
+
+          <button
+            onClick={onRestart}
+            className="inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-full border border-[#C9A45C]/60 bg-[#340E17]/80 hover:border-[#C9A45C] text-[#C9A45C] text-[10px] uppercase tracking-wider font-semibold transition"
+          >
+            <RotateCcw className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">START OVER</span>
+          </button>
+        </div>
+
+        {shareStatus && (
+          <p className="text-[11px] text-[#C9A45C] font-medium animate-fadeIn">{shareStatus}</p>
+        )}
+      </div>
+    </section>
+  );
+};
+
+// ============================================================================
+// 11. ACCESSIBLE IMAGE LIGHTBOX (Supports Gallery Navigation + Single Portrait)
+// ============================================================================
+const ImageLightbox = ({
+  isOpen,
+  images,
+  currentIndex,
+  onClose,
+  onPrev,
+  onNext
+}) => {
+  const touchStartX = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft' && images.length > 1) onPrev();
+      if (e.key === 'ArrowRight' && images.length > 1) onNext();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, images.length, onClose, onPrev, onNext]);
+
+  if (!isOpen || !images || images.length === 0) return null;
+  const activeItem = images[currentIndex] || images[0];
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Wedding Photograph Lightbox"
+      className="fixed inset-0 z-50 bg-[#1B060B]/95 backdrop-blur-md flex flex-col items-center justify-center p-4 select-none animate-fadeIn"
+      onTouchStart={(e) => {
+        touchStartX.current = e.touches[0].clientX;
+      }}
+      onTouchEnd={(e) => {
+        if (touchStartX.current === null || images.length <= 1) return;
+        const delta = e.changedTouches[0].clientX - touchStartX.current;
+        if (delta > 45) onPrev();
+        if (delta < -45) onNext();
+        touchStartX.current = null;
+      }}
+    >
+      {/* Top Bar */}
+      <div className="w-full max-w-2xl flex items-center justify-between mb-3 text-[#FFF6E8]">
+        <span className="text-xs uppercase tracking-[0.22em] text-[#C9A45C]">
+          {images.length > 1
+            ? `Memory 0${currentIndex + 1} / 0${images.length}`
+            : 'Royal Couple Portrait'}
+        </span>
+        <button
+          onClick={onClose}
+          aria-label="Close lightbox"
+          className="p-2 rounded-full border border-[#C9A45C]/60 bg-[#541522] text-[#FFF6E8] hover:bg-[#C9A45C] hover:text-[#342020] transition"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Image Frame */}
+      <div className="relative w-full max-w-xl max-h-[70vh] rounded-2xl overflow-hidden border-2 border-[#C9A45C] bg-[#340E17] shadow-2xl">
+        <img
+          src={activeItem.url}
+          alt={activeItem.title}
+          className="w-full max-h-[68vh] object-contain mx-auto"
+        />
+
+        {images.length > 1 && (
+          <>
+            <button
+              onClick={onPrev}
+              aria-label="Previous photo"
+              className="absolute left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-[#541522]/85 border border-[#C9A45C] text-[#FFF6E8] hover:bg-[#C9A45C] hover:text-[#342020] transition"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={onNext}
+              aria-label="Next photo"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-[#541522]/85 border border-[#C9A45C] text-[#FFF6E8] hover:bg-[#C9A45C] hover:text-[#342020] transition"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Caption */}
+      <div className="text-center mt-3 max-w-md">
+        <h3 className="royal-serif text-lg sm:text-xl font-bold text-[#FFF6E8]">
+          {activeItem.title}
+        </h3>
+        {activeItem.caption && (
+          <p className="text-xs sm:text-sm text-[#D9A8A9] mt-1">{activeItem.caption}</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 12. PASSWORD-PROTECTED ADMIN STUDIO (Full Form Builder + Public URL Links + Save)
+// ============================================================================
+const SaaSCustomizerModal = ({
+  isOpen,
+  onClose,
+  config,
+  onSaveFullConfig,
+  isSavingCloud,
+  reducedMotion,
+  onToggleReducedMotion
+}) => {
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [activeTab, setActiveTab] = useState('couple');
+  const [draft, setDraft] = useState(config);
+  const [statusBanner, setStatusBanner] = useState('');
+
+  // Keep draft synced when modal opens or external config updates
+  useEffect(() => {
+    if (isOpen) {
+      setDraft(config);
+    }
+  }, [isOpen, config]);
+
+  if (!isOpen) return null;
+
+  const handlePasswordSubmit = (e) => {
+    e.preventDefault();
+    if (passwordInput.trim() === ADMIN_STUDIO_PASSWORD) {
+      setIsUnlocked(true);
+      setPasswordError('');
+    } else {
+      setPasswordError('Incorrect Admin Password. Please try again.');
+    }
+  };
+
+  const updateCoupleField = (field, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      couple: {
+        ...prev.couple,
+        [field]: value
+      }
+    }));
+  };
+
+  const updateVenueField = (field, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      venue: {
+        ...prev.venue,
+        [field]: value
+      }
+    }));
+  };
+
+  const updateAssetField = (field, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      assets: {
+        ...prev.assets,
+        [field]: value
+      }
+    }));
+  };
+
+  const updateGalleryItem = (index, field, value) => {
+    setDraft((prev) => {
+      const updated = [...prev.gallery];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, gallery: updated };
+    });
+  };
+
+  const updateEventItem = (index, field, value) => {
+    setDraft((prev) => {
+      const updated = [...prev.events];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...prev, events: updated };
+    });
+  };
+
+  const handleConfirmAndSave = async () => {
+    await onSaveFullConfig(draft);
+    setStatusBanner('Configuration saved! Anyone opening this invitation will see these exact details.');
+    setTimeout(() => setStatusBanner(''), 4500);
+  };
+
+  const handleCopyShareableLink = async () => {
+    await onSaveFullConfig(draft);
+    const encoded = encodeConfigToUrlParam(draft);
+    const baseUrl = window.location.href.split('?')[0];
+    const fullShareUrl = encoded ? `${baseUrl}?invite=${encoded}` : window.location.href;
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(fullShareUrl);
+      setStatusBanner('Shareable Guest Link copied to clipboard! Send it on WhatsApp.');
+      setTimeout(() => setStatusBanner(''), 4500);
+    }
+  };
+
+  const handleCopyConfigCode = async () => {
+    const codeString = `const INITIAL_WEDDING_CONFIG = ${JSON.stringify(draft, null, 2)};`;
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(codeString);
+      setStatusBanner('Updated INITIAL_WEDDING_CONFIG code copied! Paste directly into App.jsx.');
+      setTimeout(() => setStatusBanner(''), 4500);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Template 01 Password Protected Admin Studio"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-fadeIn"
+    >
+      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl bg-[#340E17] border-2 border-[#C9A45C] text-[#FFF6E8] shadow-2xl overflow-hidden">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[#C9A45C]/30 bg-[#260810]">
+          <div className="flex items-center gap-2.5">
+            {isUnlocked ? (
+              <Unlock className="w-5 h-5 text-[#C9A45C]" />
+            ) : (
+              <Lock className="w-5 h-5 text-[#C9A45C]" />
+            )}
+            <div>
+              <span className="text-[10px] uppercase tracking-[0.25em] text-[#C9A45C] block">
+                Template 01 • Admin Configuration
+              </span>
+              <h2 className="royal-serif text-lg sm:text-xl font-bold text-[#FFF6E8]">
+                {isUnlocked ? 'Wedding Invitation Builder Studio' : 'Admin Access Required'}
+              </h2>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isUnlocked && (
+              <button
+                onClick={() => {
+                  setIsUnlocked(false);
+                  setPasswordInput('');
+                }}
+                className="text-[11px] px-2.5 py-1 rounded-full border border-[#C9A45C]/50 text-[#D9A8A9] hover:text-[#FFF6E8]"
+              >
+                Lock Studio
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-full border border-[#C9A45C]/50 text-[#C9A45C] hover:bg-[#C9A45C] hover:text-[#342020] transition"
+              aria-label="Close studio modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* LOCKED VIEW — Password Prompt so guests cannot modify anything */}
+        {!isUnlocked ? (
+          <form onSubmit={handlePasswordSubmit} className="p-6 sm:p-8 space-y-4 text-center my-auto">
+            <div className="w-14 h-14 rounded-full bg-[#541522] border-2 border-[#C9A45C] flex items-center justify-center mx-auto shadow-lg">
+              <Lock className="w-6 h-6 text-[#C9A45C]" />
+            </div>
+            <div className="space-y-1 max-w-md mx-auto">
+              <h3 className="royal-serif text-2xl font-bold text-[#FFF6E8]">
+                Protected Organizer Studio
+              </h3>
+              <p className="text-xs text-[#D9A8A9] leading-relaxed">
+                This invitation is locked so wedding guests cannot edit names, dates, or media links. Authorized organizers may enter their password below to customize this template.
+              </p>
+            </div>
+
+            <div className="max-w-xs mx-auto space-y-2.5 pt-2">
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Enter Organizer Password"
+                className="w-full px-4 py-2.5 rounded-xl bg-[#1E060C] border border-[#C9A45C]/60 text-sm text-[#FFF6E8] placeholder-[#D9A8A9]/50 focus:outline-none focus:border-[#C9A45C] text-center"
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-xs text-[#FCA5A5] font-medium">{passwordError}</p>
+              )}
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#B88E42] via-[#DEC07B] to-[#B88E42] text-[#342020] font-bold text-xs uppercase tracking-[0.2em] shadow-lg hover:brightness-105 transition"
+              >
+                Unlock Studio
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* UNLOCKED VIEW — Full Questionnaire Form & Server Link Paste Editor */
+          <>
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-1.5 px-5 pt-3 pb-2 bg-[#2B0A12] border-b border-[#C9A45C]/25 overflow-x-auto no-scrollbar">
+              {[
+                { id: 'couple', label: '1. Couple & Dates' },
+                { id: 'venue', label: '2. Venue & Map Link' },
+                { id: 'links', label: '3. Image & MP3 Links' },
+                { id: 'events', label: '4. Events (5)' }
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
+                    activeTab === t.id
+                      ? 'bg-[#C9A45C] text-[#342020] shadow'
+                      : 'bg-[#541522]/70 text-[#FFF6E8]/80 hover:text-[#FFF6E8]'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Form Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+              {statusBanner && (
+                <div className="p-3 rounded-xl bg-[#1F4E3D] border border-[#6EE7B7] text-[#FFF6E8] font-medium flex items-center gap-2 animate-fadeIn">
+                  <Check className="w-4 h-4 text-[#6EE7B7] flex-shrink-0" />
+                  <span>{statusBanner}</span>
+                </div>
+              )}
+
+              {/* TAB 1: COUPLE, NAMES, DATES & MESSAGES */}
+              {activeTab === 'couple' && (
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Bride Full Name (Card 02)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.couple.brideName}
+                        onChange={(e) => updateCoupleField('brideName', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Bride First Name (Card 01 Cover)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.couple.brideShort}
+                        onChange={(e) => updateCoupleField('brideShort', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Groom Full Name (Card 02)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.couple.groomName}
+                        onChange={(e) => updateCoupleField('groomName', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Groom First Name (Card 01 Cover)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.couple.groomShort}
+                        onChange={(e) => updateCoupleField('groomShort', e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Display Wedding Date Text
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.weddingDateDisplay}
+                        onChange={(e) =>
+                          setDraft((prev) => ({ ...prev, weddingDateDisplay: e.target.value }))
+                        }
+                        placeholder="e.g. 15 February 2027"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Countdown Target Date &amp; Time (ISO)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.weddingDateISO}
+                        onChange={(e) =>
+                          setDraft((prev) => ({ ...prev, weddingDateISO: e.target.value }))
+                        }
+                        placeholder="2027-02-15T19:00:00+05:30"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Romantic Tagline
+                    </label>
+                    <input
+                      type="text"
+                      value={draft.couple.tagline}
+                      onChange={(e) => updateCoupleField('tagline', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Main Invitation Message
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={draft.couple.invitationMessage}
+                      onChange={(e) => updateCoupleField('invitationMessage', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Couple Story / Sub-message
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={draft.couple.storyMessage}
+                      onChange={(e) => updateCoupleField('storyMessage', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Card 06 Closing Message
+                    </label>
+                    <input
+                      type="text"
+                      value={draft.couple.closingMessage}
+                      onChange={(e) => updateCoupleField('closingMessage', e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: VENUE & GOOGLE MAPS LINK */}
+              {activeTab === 'venue' && (
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Full Wedding Venue Name
+                    </label>
+                    <input
+                      type="text"
+                      value={draft.venue.name}
+                      onChange={(e) => updateVenueField('name', e.target.value)}
+                      placeholder="The Royal Orchid Palace, Jaipur, Rajasthan"
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Short City Name (Shown on Cover Card 01)
+                    </label>
+                    <input
+                      type="text"
+                      value={draft.venue.shortCity}
+                      onChange={(e) => updateVenueField('shortCity', e.target.value)}
+                      placeholder="Jaipur, Rajasthan"
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                      Direct Google Maps Link (Optional — Paste exact Maps URL here)
+                    </label>
+                    <input
+                      type="url"
+                      value={draft.venue.mapsUrl || ''}
+                      onChange={(e) => updateVenueField('mapsUrl', e.target.value)}
+                      placeholder="https://maps.app.goo.gl/..."
+                      className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                    />
+                    <p className="text-[10px] text-[#D9A8A9] mt-1">
+                      If left blank, the button automatically searches Google Maps for the venue name above.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: PUBLIC SERVER IMAGE & AUDIO URL LINKS */}
+              {activeTab === 'links' && (
+                <div className="space-y-4">
+                  <div className="p-3 rounded-xl bg-[#541522]/70 border border-[#C9A45C]/40 text-[11px] text-[#FFF6E8]/90">
+                    Upload your images and MP3 to your public server, CDN, or Cloudinary/Imgur and paste the direct links below for instant setup.
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Bride Transparent PNG Link (Card 01)
+                      </label>
+                      <input
+                        type="url"
+                        value={draft.assets.bridePng || ''}
+                        onChange={(e) => updateAssetField('bridePng', e.target.value)}
+                        placeholder="https://yourserver.com/bride-ananya.png (Leave empty for Royal SVG)"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Groom Transparent PNG Link (Card 01)
+                      </label>
+                      <input
+                        type="url"
+                        value={draft.assets.groomPng || ''}
+                        onChange={(e) => updateAssetField('groomPng', e.target.value)}
+                        placeholder="https://yourserver.com/groom-aarav.png (Leave empty for Royal SVG)"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Couple Portrait Image URL (Card 02)
+                      </label>
+                      <input
+                        type="url"
+                        value={draft.assets.couplePortrait || ''}
+                        onChange={(e) => updateAssetField('couplePortrait', e.target.value)}
+                        placeholder="https://yourserver.com/couple-portrait.webp"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-[#C9A45C] uppercase tracking-wider mb-1">
+                        Background Wedding MP3 Link
+                      </label>
+                      <input
+                        type="url"
+                        value={draft.assets.musicUrl || ''}
+                        onChange={(e) => updateAssetField('musicUrl', e.target.value)}
+                        placeholder="https://yourserver.com/wedding-music.mp3"
+                        className="w-full px-3 py-2 rounded-xl bg-[#1E060C] border border-[#C9A45C]/50 text-[#FFF6E8]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 6 Gallery Photo URLs */}
+                  <div className="pt-2 border-t border-[#C9A45C]/25 space-y-2.5">
+                    <h4 className="text-xs uppercase tracking-wider text-[#C9A45C] font-semibold">
+                      Card 03 — 6 Pre-Wedding Gallery Image Links
+                    </h4>
+                    {draft.gallery.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="p-2.5 rounded-xl bg-[#1E060C]/90 border border-[#C9A45C]/30 space-y-2"
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            value={item.title}
+                            onChange={(e) => updateGalleryItem(idx, 'title', e.target.value)}
+                            placeholder={`Photo 0${idx + 1} Title`}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                          <input
+                            type="text"
+                            value={item.caption}
+                            onChange={(e) => updateGalleryItem(idx, 'caption', e.target.value)}
+                            placeholder={`Photo 0${idx + 1} Caption`}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                        </div>
+                        <input
+                          type="url"
+                          value={item.url}
+                          onChange={(e) => updateGalleryItem(idx, 'url', e.target.value)}
+                          placeholder={`https://yourserver.com/gallery-${idx + 1}.jpg`}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#C9A45C]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: 5 WEDDING FESTIVITIES SCHEDULE */}
+              {activeTab === 'events' && (
+                <div className="space-y-3">
+                  {draft.events.map((ev, idx) => (
+                    <div
+                      key={ev.id}
+                      className="p-3 rounded-2xl bg-[#1E060C]/90 border border-[#C9A45C]/40 space-y-2"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[10px] text-[#C9A45C] uppercase">Event Title</label>
+                          <input
+                            type="text"
+                            value={ev.title}
+                            onChange={(e) => updateEventItem(idx, 'title', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#C9A45C] uppercase">Date</label>
+                          <input
+                            type="text"
+                            value={ev.date}
+                            onChange={(e) => updateEventItem(idx, 'date', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#C9A45C] uppercase">Time</label>
+                          <input
+                            type="text"
+                            value={ev.time}
+                            onChange={(e) => updateEventItem(idx, 'time', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-[#C9A45C] uppercase">Venue</label>
+                          <input
+                            type="text"
+                            value={ev.venue}
+                            onChange={(e) => updateEventItem(idx, 'venue', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-[#C9A45C] uppercase">Dress Code</label>
+                          <input
+                            type="text"
+                            value={ev.dressCode}
+                            onChange={(e) => updateEventItem(idx, 'dressCode', e.target.value)}
+                            className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-[#C9A45C] uppercase">Description</label>
+                        <textarea
+                          rows={2}
+                          value={ev.description}
+                          onChange={(e) => updateEventItem(idx, 'description', e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#340E17] border border-[#C9A45C]/40 text-[#FFF6E8]"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Accessibility Motion Toggle */}
+              <div className="flex items-center justify-between pt-3 border-t border-[#C9A45C]/25">
+                <div>
+                  <div className="text-xs font-semibold text-[#FFF6E8]">Reduced Motion Mode</div>
+                  <div className="text-[10px] text-[#D9A8A9]">
+                    Disables floating petals and spring door animations
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onToggleReducedMotion}
+                  className={`px-3 py-1 rounded-full text-xs font-bold border transition ${
+                    reducedMotion
+                      ? 'bg-[#C9A45C] text-[#342020] border-[#C9A45C]'
+                      : 'bg-[#541522] text-[#FFF6E8] border-[#C9A45C]/50'
+                  }`}
+                >
+                  {reducedMotion ? 'Enabled' : 'Standard Motion'}
+                </button>
+              </div>
+            </div>
+
+            {/* Footer Save, Share Link & Code Export Actions */}
+            <div className="p-4 bg-[#260810] border-t border-[#C9A45C]/30 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyShareableLink}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#C9A45C] bg-[#541522] hover:bg-[#741F32] text-[#FFF6E8] text-xs font-semibold transition"
+                >
+                  <LinkIcon className="w-3.5 h-3.5 text-[#C9A45C]" />
+                  <span>Copy Guest Link</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyConfigCode}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#C9A45C]/50 bg-[#340E17] hover:border-[#C9A45C] text-[#D9A8A9] hover:text-[#FFF6E8] text-xs font-semibold transition"
+                >
+                  <FileCode className="w-3.5 h-3.5 text-[#C9A45C]" />
+                  <span>Copy Code Config</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                disabled={isSavingCloud}
+                onClick={handleConfirmAndSave}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#B88E42] via-[#DEC07B] to-[#B88E42] text-[#342020] font-bold text-xs uppercase tracking-[0.16em] shadow-lg hover:brightness-105 transition"
+              >
+                <Save className="w-4 h-4 text-[#541522]" />
+                <span>{isSavingCloud ? 'Saving...' : 'Confirm & Save Live'}</span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 13. CARD NAVIGATION BAR (Progress "01 / 06", Clickable Dots, Prev/Next)
+// ============================================================================
+const CardNavigation = ({ currentCard, totalCards, onSelectCard, onPrev, onNext }) => {
+  return (
+    <nav
+      aria-label="Invitation Card Navigation"
+      className="w-full max-w-[440px] flex items-center justify-between gap-2 px-4 py-2.5 mt-2.5 rounded-full bg-[#3A0C16]/90 backdrop-blur-md border border-[#C9A45C]/55 text-[#FFF6E8] shadow-xl z-30"
+    >
+      <button
+        onClick={onPrev}
+        disabled={currentCard === 0}
+        aria-label="Previous invitation card"
+        className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs uppercase tracking-wider font-semibold transition ${
+          currentCard === 0
+            ? 'opacity-35 cursor-not-allowed text-[#D9A8A9]'
+            : 'hover:bg-[#741F32] text-[#C9A45C]'
+        }`}
+      >
+        <ChevronLeft className="w-4 h-4" />
+        <span className="hidden xs:inline">Prev</span>
+      </button>
+
+      {/* Progress Counter + Clickable Dots */}
+      <div className="flex flex-col items-center">
+        <div className="text-[11px] font-bold tracking-[0.24em] text-[#C9A45C]">
+          0{currentCard + 1} <span className="text-[#FFF6E8]/50">/</span> 0{totalCards}
+        </div>
+        <div className="flex items-center gap-1.5 mt-1" role="tablist" aria-label="Invitation cards">
+          {CARD_TITLES.map((item) => {
+            const active = item.index === currentCard;
+            return (
+              <button
+                key={item.code}
+                role="tab"
+                aria-selected={active}
+                aria-label={`Card ${item.code}: ${item.label}`}
+                title={`${item.code} — ${item.label}`}
+                onClick={() => onSelectCard(item.index)}
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  active
+                    ? 'w-6 bg-[#C9A45C] shadow-[0_0_8px_#C9A45C]'
+                    : 'w-2 bg-[#FFF6E8]/35 hover:bg-[#FFF6E8]/70'
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <button
+        onClick={onNext}
+        disabled={currentCard === totalCards - 1}
+        aria-label="Next invitation card"
+        className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs uppercase tracking-wider font-semibold transition ${
+          currentCard === totalCards - 1
+            ? 'opacity-35 cursor-not-allowed text-[#D9A8A9]'
+            : 'hover:bg-[#741F32] text-[#C9A45C]'
+        }`}
+      >
+        <span className="hidden xs:inline">Next</span>
+        <ChevronRight className="w-4 h-4" />
+      </button>
+    </nav>
+  );
+};
+
+// ============================================================================
+// 14. MAIN INVITATION EXPERIENCE ORCHESTRATOR
+// ============================================================================
+export default function App() {
+  const [config, setConfig] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const encodedInvite = params.get('invite');
+      if (encodedInvite) {
+        const decoded = decodeConfigFromUrlParam(encodedInvite);
+        if (decoded && decoded.couple) {
+          return decoded;
+        }
+      }
+    }
+    return INITIAL_WEDDING_CONFIG;
+  });
+
+  const [user, setUser] = useState(null);
+  const [isSavingCloud, setIsSavingCloud] = useState(false);
+  const [currentCard, setCurrentCard] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  // Lightbox state
+  const [lightboxState, setLightboxState] = useState({
+    isOpen: false,
+    images: [],
+    currentIndex: 0
+  });
+
+  // SaaS Studio modal state
+  const [isCustomizerOpen, setIsCustomizerOpen] = useState(false);
+
+  // Swipe gesture tracking for mobile
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+
+  // 1. Initialize Cloud Auth so saved template configs persist across sessions
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        // Continue with URL/default config if offline
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Listen for saved Wedding Configuration from Cloud Database (unless overridden by URL param)
+  useEffect(() => {
+    if (!user || !db) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('invite')) return; // Respect explicit URL share link if present
+
+    const configDocRef = doc(
+      db,
+      'artifacts',
+      appId,
+      'public',
+      'data',
+      'wedding_template_01',
+      'active_config'
+    );
+
+    const unsubscribe = onSnapshot(
+      configDocRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && data.payload) {
+            try {
+              const parsed = JSON.parse(data.payload);
+              if (parsed && parsed.couple) {
+                setConfig(parsed);
+              }
+            } catch (e) {
+              // Keep current config if JSON parse fails
+            }
+          }
+        }
+      },
+      () => {
+        // Ignore permission/offline errors gracefully
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // Save full config to Cloud + update URL bar so refreshing or sharing keeps all changes
+  const handleSaveFullConfig = async (newConfig) => {
+    setConfig(newConfig);
+    setIsSavingCloud(true);
+
+    // Update URL query parameter without reload so link sharing works immediately
+    try {
+      const encoded = encodeConfigToUrlParam(newConfig);
+      if (encoded && window.history?.replaceState) {
+        const newUrl = `${window.location.pathname}?invite=${encoded}`;
+        window.history.replaceState({ path: newUrl }, '', newUrl);
+      }
+    } catch (e) {
+      // Ignore URL length limits
+    }
+
+    if (user && db) {
+      try {
+        const configDocRef = doc(
+          db,
+          'artifacts',
+          appId,
+          'public',
+          'data',
+          'wedding_template_01',
+          'active_config'
+        );
+        await setDoc(configDocRef, {
+          payload: JSON.stringify(newConfig),
+          updatedAt: Date.now(),
+          updatedBy: user.uid
+        });
+      } catch (e) {
+        // Fallback already handled via URL state
+      }
+    }
+
+    setIsSavingCloud(false);
+  };
+
+  // Check OS prefers-reduced-motion on mount
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (mediaQuery?.matches) {
+      setReducedMotion(true);
+    }
+  }, []);
+
+  const goToCard = useCallback(
+    (targetIndex) => {
+      if (targetIndex < 0 || targetIndex >= CARD_TITLES.length || targetIndex === currentCard) {
+        return;
+      }
+      setDirection(targetIndex > currentCard ? 1 : -1);
+      setCurrentCard(targetIndex);
+    },
+    [currentCard]
+  );
+
+  const handleNextCard = useCallback(() => {
+    if (currentCard < CARD_TITLES.length - 1) {
+      setDirection(1);
+      setCurrentCard((c) => c + 1);
+    }
+  }, [currentCard]);
+
+  const handlePrevCard = useCallback(() => {
+    if (currentCard > 0) {
+      setDirection(-1);
+      setCurrentCard((c) => c - 1);
+    }
+  }, [currentCard]);
+
+  // Keyboard Arrow Navigation on Desktop
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (lightboxState.isOpen || isCustomizerOpen) return;
+      if (e.key === 'ArrowRight') handleNextCard();
+      if (e.key === 'ArrowLeft') handlePrevCard();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleNextCard, handlePrevCard, lightboxState.isOpen, isCustomizerOpen]);
+
+  // Horizontal Touch Swipe Handler on Card Container
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+
+    if (Math.abs(deltaX) > 55 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+      if (deltaX < 0) handleNextCard();
+      if (deltaX > 0) handlePrevCard();
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+  };
+
+  return (
+    <div className="relative min-h-screen w-full bg-[#24070E] text-[#FFF6E8] flex flex-col items-center justify-center p-2 sm:p-4 overflow-x-hidden selection:bg-[#C9A45C] selection:text-[#342020]">
+      {/* Typography & Custom Keyframe Animations */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+        .royal-serif {
+          font-family: 'Cormorant Garamond', Georgia, serif;
+        }
+        body {
+          font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+          background-color: #24070E;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        @keyframes fallPetal {
+          0% {
+            transform: translateY(-20px) translateX(0px) rotate(0deg);
+            opacity: 0;
+          }
+          15% {
+            opacity: 0.65;
+          }
+          85% {
+            opacity: 0.65;
+          }
+          100% {
+            transform: translateY(680px) translateX(35px) rotate(320deg);
+            opacity: 0;
+          }
+        }
+        @keyframes floatSparkle {
+          0%, 100% {
+            transform: translateY(0px) scale(0.9);
+            opacity: 0.25;
+          }
+          50% {
+            transform: translateY(-90px) scale(1.25);
+            opacity: 0.75;
+          }
+        }
+        @keyframes gentleSway {
+          0%, 100% { transform: rotate(-2.5deg); }
+          50% { transform: rotate(2.5deg); }
+        }
+        @keyframes cardEnterRight {
+          from {
+            opacity: 0;
+            transform: translateX(28px) scale(0.97);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+          }
+        }
+        @keyframes cardEnterLeft {
+          from {
+            opacity: 0;
+            transform: translateX(-28px) scale(0.97);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+          }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .royal-falling-petal {
+          animation-name: fallPetal;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+        }
+        .royal-floating-sparkle {
+          animation-name: floatSparkle;
+          animation-timing-function: ease-in-out;
+          animation-iteration-count: infinite;
+        }
+        .royal-sway {
+          transform-origin: top center;
+          animation: gentleSway 4.5s ease-in-out infinite;
+        }
+        .card-spring-right {
+          animation: cardEnterRight 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .card-spring-left {
+          animation: cardEnterLeft 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out forwards;
+        }
+      `}</style>
+
+      {/* Desktop Ambient Royal Mandala Backdrop */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_center,_#541522_0%,_#24070E_75%)] opacity-90"
+      />
+
+      {/* Top Left Discreet Password-Protected Admin Studio Trigger */}
+      <div className="fixed top-3 left-3 sm:top-5 sm:left-5 z-40">
+        <button
+          onClick={() => setIsCustomizerOpen(true)}
+          className="inline-flex items-center justify-center w-8 h-8 sm:w-auto sm:h-auto sm:gap-1.5 sm:px-3 sm:py-1.5 rounded-full bg-[#541522]/85 backdrop-blur-md border border-[#C9A45C]/50 text-[10px] uppercase tracking-wider text-[#C9A45C]/90 hover:bg-[#741F32] hover:text-[#FFF6E8] shadow-lg transition"
+          title="Organizer Settings"
+          aria-label="Organizer Settings"
+        >
+          <Lock className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Setup</span>
+        </button>
+      </div>
+
+      {/* Persistent Floating Background Music Control */}
+      <MusicPlayer
+        customAudioUrl={config.assets.musicUrl}
+        customAudioName={config.assets.musicUrl ? 'Custom Server Wedding Audio' : ''}
+        onOpenCustomizer={() => setIsCustomizerOpen(true)}
+      />
+
+      {/* Primary Centered Mobile-First Invitation Card Stage with Middle Side Navigation Toggles */}
+      <div className="relative w-full max-w-[440px] flex items-center justify-center z-20">
+        {/* Left Middle Floating Page Toggle Button */}
+        {currentCard > 0 && (
+          <button
+            onClick={handlePrevCard}
+            aria-label="Go to previous invitation card"
+            className="absolute left-1.5 sm:-left-5 top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#3A0C16]/90 hover:bg-[#C9A45C] text-[#C9A45C] hover:text-[#342020] border-2 border-[#C9A45C] shadow-[0_6px_20px_rgba(0,0,0,0.65)] active:scale-90 transition-all duration-300 backdrop-blur-md group"
+            title="Previous Card"
+          >
+            <ChevronLeft className="w-5 h-5 transition-transform group-hover:-translate-x-0.5" />
+          </button>
+        )}
+
+        {/* Right Middle Floating Page Toggle Button (With pulse indicator so guests notice immediately) */}
+        {currentCard < CARD_TITLES.length - 1 && (
+          <button
+            onClick={handleNextCard}
+            aria-label="Go to next invitation card"
+            className="absolute right-1.5 sm:-right-5 top-1/2 -translate-y-1/2 z-40 flex items-center justify-center gap-0.5 px-2.5 h-9 sm:w-11 sm:h-11 sm:px-0 rounded-full bg-gradient-to-r from-[#B88E42] via-[#DEC07B] to-[#B88E42] text-[#342020] border-2 border-[#FFF6E8]/80 shadow-[0_6px_24px_rgba(201,164,92,0.55)] hover:brightness-110 active:scale-90 transition-all duration-300 group"
+            title="Next Card"
+          >
+            <span className="text-[9px] font-extrabold uppercase tracking-wider sm:hidden pl-0.5">
+              Next
+            </span>
+            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-[#541522] transition-transform group-hover:translate-x-0.5" />
+          </button>
+        )}
+
+        <main
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="relative w-full h-[82vh] min-h-[590px] max-h-[760px] rounded-[28px] bg-gradient-to-b from-[#541522] via-[#65192A] to-[#430E1A] border-2 border-[#C9A45C] shadow-[0_22px_65px_rgba(0,0,0,0.75)] overflow-hidden flex flex-col"
+        >
+          {/* Subtle Floating Rose Petals & Gold Particles */}
+          <AmbientRoyalParticles reducedMotion={reducedMotion} />
+
+          {/* Active Full-Screen Card with Directional Spring Transition */}
+          <div
+            key={currentCard}
+            className={`w-full h-full ${
+              reducedMotion
+                ? ''
+                : direction >= 0
+                ? 'card-spring-right'
+                : 'card-spring-left'
+            }`}
+          >
+            {currentCard === 0 && (
+              <OpeningCard
+                config={config}
+                onOpenInvitation={() => goToCard(1)}
+                reducedMotion={reducedMotion}
+              />
+            )}
+
+            {currentCard === 1 && (
+              <CoupleCard
+                config={config}
+                onOpenImageModal={(singlePhoto) =>
+                  setLightboxState({
+                    isOpen: true,
+                    images: [singlePhoto],
+                    currentIndex: 0
+                  })
+                }
+                onNextCard={() => goToCard(2)}
+              />
+            )}
+
+            {currentCard === 2 && (
+              <GalleryCard
+                config={config}
+                onSelectGalleryIndex={(idx) =>
+                  setLightboxState({
+                    isOpen: true,
+                    images: config.gallery,
+                    currentIndex: idx
+                  })
+                }
+              />
+            )}
+
+            {currentCard === 3 && <CountdownCard config={config} />}
+
+            {currentCard === 4 && <EventsCard config={config} />}
+
+            {currentCard === 5 && (
+              <VenueCard config={config} onRestart={() => goToCard(0)} />
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* Bottom Card Navigation Bar */}
+      <CardNavigation
+        currentCard={currentCard}
+        totalCards={CARD_TITLES.length}
+        onSelectCard={goToCard}
+        onPrev={handlePrevCard}
+        onNext={handleNextCard}
+      />
+
+      {/* Clear Mobile Swipe / Tap Hint Pill */}
+      <div className="mt-1.5 inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-[#3A0C16]/70 border border-[#C9A45C]/30 text-[10px] uppercase tracking-[0.18em] text-[#D9A8A9] z-20 text-center">
+        <span>← Swipe or Tap Side Arrows to Flip Pages →</span>
+      </div>
+
+      {/* Fullscreen Accessible Lightbox */}
+      <ImageLightbox
+        isOpen={lightboxState.isOpen}
+        images={lightboxState.images}
+        currentIndex={lightboxState.currentIndex}
+        onClose={() => setLightboxState((s) => ({ ...s, isOpen: false }))}
+        onPrev={() =>
+          setLightboxState((s) => ({
+            ...s,
+            currentIndex: (s.currentIndex - 1 + s.images.length) % s.images.length
+          }))
+        }
+        onNext={() =>
+          setLightboxState((s) => ({
+            ...s,
+            currentIndex: (s.currentIndex + 1) % s.images.length
+          }))
+        }
+      />
+
+      {/* Password-Protected SaaS Admin Customizer Modal */}
+      <SaaSCustomizerModal
+        isOpen={isCustomizerOpen}
+        onClose={() => setIsCustomizerOpen(false)}
+        config={config}
+        onSaveFullConfig={handleSaveFullConfig}
+        isSavingCloud={isSavingCloud}
+        reducedMotion={reducedMotion}
+        onToggleReducedMotion={() => setReducedMotion((r) => !r)}
+      />
+    </div>
+  );
+}
